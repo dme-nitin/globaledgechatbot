@@ -263,7 +263,7 @@
 <script>
 /**
  * ============================================================
- *  HEENA CHATBOT — WIDGET LOGIC
+ *  HEENA CHATBOT Â— WIDGET LOGIC
  * ============================================================
  * IMPORTANT: replace APPS_SCRIPT_URL below with your deployed
  * Google Apps Script Web App URL (see SETUP_INSTRUCTIONS.md)
@@ -298,7 +298,7 @@ const FLOW_QUESTIONS = {
   schedule: "When would be a convenient time for a quick call with our senior counsellor?"
 };
 
-// Add more country/city names here as needed — used to detect if the user
+// Add more country/city names here as needed Â— used to detect if the user
 // already mentioned a destination so we don't ask the country question again.
 const KNOWN_LOCATIONS = [
   "dubai","singapore","vancouver","montreal","toronto","california","usa","u.s.a","united states",
@@ -383,7 +383,7 @@ function processFlowAnswer(text) {
       leadAnswers.callTime = text;
       flowStep = 8;
       flowDone = true;
-      return `Perfect! I've noted everything down — our senior counsellor will call you around "${text}". Thanks for chatting with me today! ??`;
+      return `Perfect! I've noted everything down Â— our senior counsellor will call you around "${text}". Thanks for chatting with me today! ??`;
 
     default:
       return getFAQAnswer(text);
@@ -393,7 +393,7 @@ function processFlowAnswer(text) {
 // Hover popup: show on mouse enter, hide automatically on mouse leave
 launcher.addEventListener('mouseenter', () => teaser.classList.add('show'));
 launcher.addEventListener('mouseleave', () => teaser.classList.remove('show'));
-// Touch devices (mobile) don't have hover — briefly flash the popup on tap, then open chat
+// Touch devices (mobile) don't have hover Â— briefly flash the popup on tap, then open chat
 launcher.addEventListener('touchstart', () => {
   teaser.classList.add('show');
   setTimeout(() => teaser.classList.remove('show'), 1200);
