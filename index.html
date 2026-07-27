@@ -17,8 +17,8 @@
     --text-soft:#5b7185;
     --white:#ffffff;
     --radius:20px;
-    --font-display: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
-    --font-body: 'Inter', 'Segoe UI', sans-serif;
+    --font-display: 'Plus Jakarta Sans', 'Segoe UI', 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+    --font-body: 'Inter', 'Segoe UI', 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
   }
   *{box-sizing:border-box;}
   body{margin:0;font-family:var(--font-body);}
@@ -107,7 +107,8 @@
   }
   .heena-header-text .status{ font-size:12px; opacity:.85; display:flex; align-items:center; gap:5px; margin-top:2px;}
   .heena-header-text .status .dot{ width:7px;height:7px;background:#4ade80;border-radius:50%; }
-  .heena-close{ cursor:pointer; opacity:.75; background:none;border:none;color:var(--white); font-size:15px; }
+  .heena-close{ cursor:pointer; opacity:.75; background:none;border:none;color:var(--white); display:flex; align-items:center; justify-content:center; padding:2px; }
+  .heena-close svg{ width:16px; height:16px; }
   .heena-close:hover{ opacity:1; }
 
   /* ---------- Lead Form Screen ---------- */
@@ -216,12 +217,16 @@
     <div class="heena-header-text">
       <div class="name"><span class="online-dot"></span>Heena is online</div>
     </div>
-    <button class="heena-close" id="heena-close-btn" aria-label="Close chat">?</button>
+    <button class="heena-close" id="heena-close-btn" aria-label="Close chat">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </button>
   </div>
 
   <!-- Step 1: Lead Form -->
   <div id="heena-form-screen">
-    <h2>Let's get started ??</h2>
+    <h2>Let's get started 👋</h2>
     <p>Please share a few details so Heena can assist you better.</p>
 
     <div class="heena-field">
@@ -263,7 +268,7 @@
 <script>
 /**
  * ============================================================
- *  HEENA CHATBOT  WIDGET LOGIC
+ *  HEENA CHATBOT — WIDGET LOGIC
  * ============================================================
  * IMPORTANT: replace APPS_SCRIPT_URL below with your deployed
  * Google Apps Script Web App URL (see SETUP_INSTRUCTIONS.md)
@@ -298,7 +303,7 @@ const FLOW_QUESTIONS = {
   schedule: "When would be a convenient time for a quick call with our senior counsellor?"
 };
 
-// Add more country/city names here as needed  used to detect if the user
+// Add more country/city names here as needed — used to detect if the user
 // already mentioned a destination so we don't ask the country question again.
 const KNOWN_LOCATIONS = [
   "dubai","singapore","vancouver","montreal","toronto","california","usa","u.s.a","united states",
@@ -383,7 +388,7 @@ function processFlowAnswer(text) {
       leadAnswers.callTime = text;
       flowStep = 8;
       flowDone = true;
-      return `Perfect! I've noted everything down  our senior counsellor will call you around "${text}". Thanks for chatting with me today! ??`;
+      return `Perfect! I've noted everything down — our senior counsellor will call you around "${text}". Thanks for chatting with me today! 😊`;
 
     default:
       return getFAQAnswer(text);
@@ -393,7 +398,7 @@ function processFlowAnswer(text) {
 // Hover popup: show on mouse enter, hide automatically on mouse leave
 launcher.addEventListener('mouseenter', () => teaser.classList.add('show'));
 launcher.addEventListener('mouseleave', () => teaser.classList.remove('show'));
-// Touch devices (mobile) don't have hover  briefly flash the popup on tap, then open chat
+// Touch devices (mobile) don't have hover — briefly flash the popup on tap, then open chat
 launcher.addEventListener('touchstart', () => {
   teaser.classList.add('show');
   setTimeout(() => teaser.classList.remove('show'), 1200);
@@ -439,8 +444,8 @@ startBtn.addEventListener('click', async () => {
   formScreen.style.display = 'none';
   chatScreen.style.display = 'flex';
   panel.classList.remove('compact');
-  addMessage('bot', `Hello ??`);
-  conversationLog.push(`Heena: Hello ??`);
+  addMessage('bot', `Hello 👋`);
+  conversationLog.push(`Heena: Hello 👋`);
 
   // Proactively guide the conversation with the first qualifying question
   showTyping();
