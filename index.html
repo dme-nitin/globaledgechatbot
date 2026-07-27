@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Heena Chat Widget</title>
 <style>
@@ -21,7 +22,7 @@
     --font-body: 'Inter', 'Segoe UI', 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
   }
   *{box-sizing:border-box;}
-  body{margin:0;font-family:var(--font-body);}
+  body{margin:0;font-family:system-ui, -apple-system, var(--font-body), 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;}
 
   /* ---------- Floating Launcher (3D sky-blue) ---------- */
   #heena-launcher{
@@ -226,7 +227,7 @@
 
   <!-- Step 1: Lead Form -->
   <div id="heena-form-screen">
-    <h2>Let's get started 👋</h2>
+    <h2>Let's get started &#128075;</h2>
     <p>Please share a few details so Heena can assist you better.</p>
 
     <div class="heena-field">
@@ -388,7 +389,7 @@ function processFlowAnswer(text) {
       leadAnswers.callTime = text;
       flowStep = 8;
       flowDone = true;
-      return `Perfect! I've noted everything down — our senior counsellor will call you around "${text}". Thanks for chatting with me today! 😊`;
+      return `Perfect! I've noted everything down - our senior counsellor will call you around "${text}". Thanks for chatting with me today! \u{1F60A}`;
 
     default:
       return getFAQAnswer(text);
@@ -444,8 +445,8 @@ startBtn.addEventListener('click', async () => {
   formScreen.style.display = 'none';
   chatScreen.style.display = 'flex';
   panel.classList.remove('compact');
-  addMessage('bot', `Hello 👋`);
-  conversationLog.push(`Heena: Hello 👋`);
+  addMessage('bot', `Hello \u{1F44B}`);
+  conversationLog.push(`Heena: Hello \u{1F44B}`);
 
   // Proactively guide the conversation with the first qualifying question
   showTyping();
