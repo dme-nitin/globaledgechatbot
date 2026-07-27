@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Heena Chat Widget</title>
+<style>
+  :root{
+    --ink:#0f2436;
+    --navy:#0c4a6e;
+    --navy-deep:#082f49;
+    --sky:#0ea5e9;
+    --sky-light:#38bdf8;
+    --sky-deep:#0284c7;
+    --cloud:#f0f9ff;
+    --line:#dceefb;
+    --text-soft:#5b7185;
+    --white:#ffffff;
+    --radius:20px;
+    --font-display: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
+    --font-body: 'Inter', 'Segoe UI', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:var(--font-body);}
+
+  /* ---------- Floating Launcher (3D sky-blue) ---------- */
+  #heena-launcher{
+    position:fixed; bottom:26px; right:26px;
+    width:64px; height:64px; border-radius:50%;
+    background:linear-gradient(150deg, var(--sky-light) 0%, var(--sky) 55%, var(--sky-deep) 100%);
+    box-shadow:
+      0 14px 30px rgba(2,132,199,0.42),
+      inset 0 2px 3px rgba(255,255,255,0.55),
+      inset 0 -4px 6px rgba(2,60,90,0.35);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; z-index:99998; border:none;
+    transition:transform .2s ease;
+    animation:heena-glow 2.6s ease-in-out infinite;
+  }
+  #heena-launcher:hover{ transform:scale(1.08) translateY(-2px); }
+  #heena-launcher svg{ width:27px; height:27px; }
+  #heena-launcher .dot{
+    position:absolute; top:1px; right:1px; width:13px;height:13px;
+    background:#22c55e; border:2.5px solid var(--white); border-radius:50%;
+    box-shadow:0 0 0 2px rgba(34,197,94,0.25);
+  }
+  @keyframes heena-glow{
+    0%,100%{ box-shadow:0 14px 30px rgba(2,132,199,0.42), inset 0 2px 3px rgba(255,255,255,0.55), inset 0 -4px 6px rgba(2,60,90,0.35); }
+    50%{ box-shadow:0 14px 38px rgba(14,165,233,0.62), inset 0 2px 3px rgba(255,255,255,0.55), inset 0 -4px 6px rgba(2,60,90,0.35); }
+  }
+
+  /* ---------- Teaser bubble (hover popup) ---------- */
+  #heena-teaser{
+    position:fixed; bottom:34px; right:100px; z-index:99997;
+    background:var(--white); color:var(--ink); font-family:var(--font-display);
+    font-weight:600; font-size:13.5px; padding:13px 16px; border-radius:14px;
+    box-shadow:0 10px 26px rgba(15,36,54,0.16); display:flex; align-items:center; gap:10px;
+    width:max-content; max-width:230px; opacity:0; transform:translateY(8px) scale(.96); pointer-events:none;
+    transition:opacity .2s ease, transform .2s ease;
+  }
+  #heena-teaser.show{ opacity:1; transform:translateY(0) scale(1); }
+  #heena-teaser .teaser-icon{
+    width:26px;height:26px;border-radius:50%;flex-shrink:0;
+    background:linear-gradient(150deg, var(--sky-light), var(--sky-deep));
+    display:flex;align-items:center;justify-content:center;
+  }
+  #heena-teaser .teaser-icon svg{ width:14px;height:14px; }
+  #heena-teaser span{
+    flex:1; min-width:0; white-space:normal; word-break:normal; overflow-wrap:normal;
+    line-height:1.4;
+  }
+
+  /* ---------- Chat Panel ---------- */
+  #heena-panel{
+    position:fixed; bottom:104px; right:26px;
+    width:380px; max-width:92vw; height:540px; max-height:80vh;
+    background:var(--white); border-radius:var(--radius);
+    box-shadow:0 26px 64px rgba(8,47,73,0.28);
+    display:none; flex-direction:column; overflow:hidden;
+    z-index:99999; font-family:var(--font-body);
+    border:1px solid var(--line);
+    transform-origin:bottom right;
+  }
+  #heena-panel.open{ display:flex; animation:heena-rise .32s cubic-bezier(.2,.8,.3,1); }
+  #heena-panel.compact{ height:auto; max-height:480px; }
+  @keyframes heena-rise{ from{opacity:0; transform:translateY(24px) scale(.96);} to{opacity:1; transform:translateY(0) scale(1);} }
+
+  /* ---------- Header ---------- */
+  .heena-header{
+    background:linear-gradient(120deg, var(--navy-deep), var(--sky-deep));
+    padding:16px 18px; display:flex; align-items:center; gap:12px; color:var(--white);
+    flex-shrink:0;
+  }
+  .heena-avatar{
+    width:40px;height:40px;border-radius:50%;
+    background:linear-gradient(150deg, var(--sky-light), var(--sky-deep));
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--font-display); font-weight:700; font-size:16px;
+    flex-shrink:0;
+  }
+  .heena-header-text{ flex:1; }
+  .heena-header-text .name{ font-family:var(--font-display); font-weight:700; font-size:15px; display:flex; align-items:center; }
+  .heena-header-text .name .online-dot{
+    width:8px; height:8px; background-color:#22c55e; border-radius:50%;
+    display:inline-block; margin-right:7px; flex-shrink:0;
+    box-shadow:0 0 0 2px rgba(34,197,94,0.25);
+  }
+  .heena-header-text .status{ font-size:12px; opacity:.85; display:flex; align-items:center; gap:5px; margin-top:2px;}
+  .heena-header-text .status .dot{ width:7px;height:7px;background:#4ade80;border-radius:50%; }
+  .heena-close{ cursor:pointer; opacity:.75; background:none;border:none;color:var(--white); font-size:15px; }
+  .heena-close:hover{ opacity:1; }
+
+  /* ---------- Lead Form Screen ---------- */
+  #heena-form-screen{
+    flex:1; padding:18px 22px 20px; display:flex; flex-direction:column; overflow-y:auto; background:var(--cloud);
+  }
+  #heena-form-screen h2{
+    font-family:var(--font-display); font-size:19px; color:var(--ink); margin:0 0 6px;
+  }
+  #heena-form-screen p{ font-size:13px; color:var(--text-soft); margin:0 0 20px; line-height:1.5;}
+  .heena-field{ margin-bottom:14px; }
+  .heena-field label{ font-size:12px; font-weight:600; color:var(--ink); display:block; margin-bottom:6px; }
+  .heena-field input{
+    width:100%; padding:11px 13px; border-radius:11px; border:1.5px solid var(--line);
+    font-size:14px; font-family:var(--font-body); outline:none; transition:border .15s ease;
+    background:var(--white);
+  }
+  .heena-field input:focus{ border-color:var(--sky); }
+  .heena-field .err{ color:#dc2626; font-size:11px; margin-top:5px; display:none; }
+  #heena-start-btn{
+    margin-top:8px; background:linear-gradient(120deg, var(--sky-light), var(--sky-deep));
+    color:var(--white); border:none; padding:13px; border-radius:12px;
+    font-family:var(--font-display); font-weight:700; font-size:14px; cursor:pointer;
+    box-shadow:0 8px 20px rgba(2,132,199,0.32);
+  }
+  #heena-start-btn:disabled{ opacity:.6; cursor:not-allowed; }
+
+  /* ---------- Chat Screen ---------- */
+  #heena-chat-screen{ flex:1; display:none; flex-direction:column; min-height:0; }
+  #heena-messages{
+    flex:1; overflow-y:auto; padding:16px; background:var(--cloud);
+    display:flex; flex-direction:column; gap:10px;
+  }
+  .heena-msg{ max-width:78%; padding:10px 13px; border-radius:14px; font-size:13.5px; line-height:1.45; white-space:pre-line; }
+  .heena-msg.bot{
+    background:var(--white); color:var(--ink); align-self:flex-start; border-bottom-left-radius:4px;
+    box-shadow:0 1px 3px rgba(18,35,61,0.08);
+  }
+  .heena-msg.user{
+    background:linear-gradient(120deg, var(--sky), var(--sky-deep)); color:var(--white);
+    align-self:flex-end; border-bottom-right-radius:4px;
+    display:flex; align-items:flex-end; gap:6px; flex-wrap:wrap;
+  }
+  .heena-msg.user .ticks{
+    display:inline-flex; align-items:center; flex-shrink:0; color:rgba(255,255,255,0.65);
+    transition:color .25s ease;
+  }
+  .heena-msg.user .ticks svg{ width:15px; height:15px; display:block; }
+  .heena-msg.user .ticks.read{ color:#34B7F1; }
+  .heena-typing{ align-self:flex-start; display:flex; align-items:center; gap:8px; padding:11px 14px; background:var(--white);
+    border-radius:14px; border-bottom-left-radius:4px; box-shadow:0 1px 3px rgba(18,35,61,0.08);
+    font-size:12px; color:var(--text-soft); }
+  .heena-typing .heena-dots{ display:flex; gap:4px; }
+  .heena-typing .heena-dots span{ width:6px;height:6px;background:#9db8c9;border-radius:50%; animation:heena-bounce 1.2s infinite; }
+  .heena-typing .heena-dots span:nth-child(2){ animation-delay:.15s; }
+  .heena-typing .heena-dots span:nth-child(3){ animation-delay:.3s; }
+  @keyframes heena-bounce{ 0%,60%,100%{ transform:translateY(0); opacity:.5;} 30%{ transform:translateY(-4px); opacity:1;} }
+
+  #heena-input-row{
+    display:flex; gap:8px; padding:12px; border-top:1px solid var(--line); background:var(--white); flex-shrink:0;
+  }
+  #heena-input{
+    flex:1; border:1.5px solid var(--line); border-radius:22px; padding:10px 15px;
+    font-size:13.5px; outline:none; font-family:var(--font-body);
+  }
+  #heena-input:focus{ border-color:var(--sky); }
+  #heena-send{
+    width:42px;height:42px;border-radius:50%; border:none; flex-shrink:0;
+    background:linear-gradient(150deg, var(--sky-light), var(--sky-deep)); color:var(--white); cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 6px 16px rgba(2,132,199,0.35);
+  }
+  #heena-send svg{ width:17px;height:17px; }
+
+  @media (max-width:480px){
+    #heena-panel{ right:10px; left:10px; bottom:96px; width:auto; height:70vh; max-height:70vh; }
+    #heena-launcher{ right:16px; bottom:16px; }
+    #heena-teaser{ right:16px; bottom:90px; max-width:220px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Teaser Bubble (hover popup) -->
+<div id="heena-teaser">
+  <div class="teaser-icon">
+    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M4 4h16v12H7l-3 3V4z" fill="white"/>
+    </svg>
+  </div>
+  <span>Chat with your AI Senior Counsellor</span>
+</div>
+
+<!-- Floating Launcher Button -->
+<button id="heena-launcher" aria-label="Open chat">
+  <span class="dot"></span>
+  <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+</button>
+
+<!-- Chat Panel -->
+<div id="heena-panel" class="compact">
+  <div class="heena-header">
+    <div class="heena-avatar">H</div>
+    <div class="heena-header-text">
+      <div class="name"><span class="online-dot"></span>Heena is online</div>
+    </div>
+    <button class="heena-close" id="heena-close-btn" aria-label="Close chat">?</button>
+  </div>
+
+  <!-- Step 1: Lead Form -->
+  <div id="heena-form-screen">
+    <h2>Let's get started ??</h2>
+    <p>Please share a few details so Heena can assist you better.</p>
+
+    <div class="heena-field">
+      <label for="heena-name">Name</label>
+      <input type="text" id="heena-name" placeholder="Your full name">
+      <div class="err" id="err-name">Please enter your name.</div>
+    </div>
+    <div class="heena-field">
+      <label for="heena-mobile">Mobile Number</label>
+      <input type="tel" id="heena-mobile" placeholder="10-digit mobile number">
+      <div class="err" id="err-mobile">Please enter a valid mobile number.</div>
+    </div>
+    <div class="heena-field">
+      <label for="heena-email">Email ID</label>
+      <input type="email" id="heena-email" placeholder="you@example.com">
+      <div class="err" id="err-email">Please enter a valid email.</div>
+    </div>
+
+    <button id="heena-start-btn">Start Chat</button>
+  </div>
+
+  <!-- Step 2: Chat Interface -->
+  <div id="heena-chat-screen">
+    <div id="heena-messages"></div>
+    <div id="heena-input-row">
+      <input type="text" id="heena-input" placeholder="Tell me your query...">
+      <button id="heena-send" aria-label="Send message">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M3 20l18-8L3 4v6l12 2-12 2v6z" fill="white"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- FAQ training data (edit faq-data.js to add more Q&A) -->
+<script src="faq-data.js"></script>
+
+<script>
+/**
+ * ============================================================
+ *  HEENA CHATBOT — WIDGET LOGIC
+ * ============================================================
+ * IMPORTANT: replace APPS_SCRIPT_URL below with your deployed
+ * Google Apps Script Web App URL (see SETUP_INSTRUCTIONS.md)
+ * ============================================================
+ */
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz8aVAKKmYSYzhrPnAIXMxfJ68oOAecCN-2uhwE7zhR3irvQsNPdrexcy7stenKbshYlg/exec";
+
+const launcher = document.getElementById('heena-launcher');
+const panel = document.getElementById('heena-panel');
+const closeBtn = document.getElementById('heena-close-btn');
+const formScreen = document.getElementById('heena-form-screen');
+const chatScreen = document.getElementById('heena-chat-screen');
+const startBtn = document.getElementById('heena-start-btn');
+const messagesEl = document.getElementById('heena-messages');
+const inputEl = document.getElementById('heena-input');
+const sendBtn = document.getElementById('heena-send');
+const teaser = document.getElementById('heena-teaser');
+
+let userInfo = { name: "", mobile: "", email: "" };
+let conversationLog = [];
+
+// ---------- Guided Qualification Flow ----------
+// Step-by-step counsellor questions. Edit the text here to change wording.
+const FLOW_QUESTIONS = {
+  course: "Which course are you looking for?",
+  country: "Which country are you looking for?",
+  timeline: "How soon are you planning to go abroad? (This year / next year / a specific intake?)",
+  education: "What is your last education qualification, and which stream did you take?",
+  percentage: "How much percentage (or CGPA) did you score in that?",
+  english: "Have you given any English language test (IELTS / TOEFL / PTE)? If yes, how much did you score?",
+  budget: "What is your approximate budget for overseas education?",
+  schedule: "When would be a convenient time for a quick call with our senior counsellor?"
+};
+
+// Add more country/city names here as needed — used to detect if the user
+// already mentioned a destination so we don't ask the country question again.
+const KNOWN_LOCATIONS = [
+  "dubai","singapore","vancouver","montreal","toronto","california","usa","u.s.a","united states",
+  "germany","canada","uk","united kingdom","australia","new zealand","ireland","france","italy",
+  "spain","sydney","melbourne","london","berlin","dublin","auckland","poland","netherlands"
+];
+
+// Words/phrases that indicate a clear, specific timeline answer.
+const CLEAR_TIMELINE_HINTS = [
+  "this year","next year","2025","2026","2027","intake","jan","feb","mar","apr","may","jun",
+  "jul","aug","sep","oct","nov","dec","month","fall","spring","summer","winter"
+];
+
+let flowStep = 0;       // which question we're currently expecting an answer for
+let flowDone = false;   // once true, free-form FAQ matching takes over
+let leadAnswers = { course:"", country:"", timeline:"", education:"", percentage:"", englishTest:"", budget:"", callTime:"" };
+
+function detectLocation(text) {
+  const low = (text || "").toLowerCase();
+  return KNOWN_LOCATIONS.find(loc => low.includes(loc)) || null;
+}
+function isTimelineClear(text) {
+  const low = (text || "").toLowerCase();
+  return CLEAR_TIMELINE_HINTS.some(h => low.includes(h));
+}
+
+// Decides whether to ask the country question or skip it (if already mentioned)
+function askCountryOrSkip() {
+  const loc = detectLocation(leadAnswers.course);
+  if (loc) {
+    leadAnswers.country = loc;
+    flowStep = 7; // fast-track: high-intent lead, go straight to call scheduling
+    return `Great, we can definitely help you with that destination! ${FLOW_QUESTIONS.schedule}`;
+  }
+  return FLOW_QUESTIONS.country;
+}
+
+// Processes the user's answer for whichever step we're currently on,
+// updates state, and returns Heena's next message.
+function processFlowAnswer(text) {
+  switch (flowStep) {
+    case 0: // course
+      leadAnswers.course = text;
+      flowStep = 1;
+      return askCountryOrSkip();
+
+    case 1: // country (only reached if it wasn't already skipped)
+      leadAnswers.country = text;
+      flowStep = 2;
+      return FLOW_QUESTIONS.timeline;
+
+    case 2: // timeline
+      leadAnswers.timeline = text;
+      if (!isTimelineClear(text)) {
+        flowStep = 7;
+        return `No worries, that's completely fine! ${FLOW_QUESTIONS.schedule}`;
+      }
+      flowStep = 3;
+      return FLOW_QUESTIONS.education;
+
+    case 3: // education
+      leadAnswers.education = text;
+      flowStep = 4;
+      return FLOW_QUESTIONS.percentage;
+
+    case 4: // percentage
+      leadAnswers.percentage = text;
+      flowStep = 5;
+      return FLOW_QUESTIONS.english;
+
+    case 5: // english test
+      leadAnswers.englishTest = text;
+      flowStep = 6;
+      return FLOW_QUESTIONS.budget;
+
+    case 6: // budget
+      leadAnswers.budget = text;
+      flowStep = 7;
+      return FLOW_QUESTIONS.schedule;
+
+    case 7: // call scheduling
+      leadAnswers.callTime = text;
+      flowStep = 8;
+      flowDone = true;
+      return `Perfect! I've noted everything down — our senior counsellor will call you around "${text}". Thanks for chatting with me today! ??`;
+
+    default:
+      return getFAQAnswer(text);
+  }
+}
+
+// Hover popup: show on mouse enter, hide automatically on mouse leave
+launcher.addEventListener('mouseenter', () => teaser.classList.add('show'));
+launcher.addEventListener('mouseleave', () => teaser.classList.remove('show'));
+// Touch devices (mobile) don't have hover — briefly flash the popup on tap, then open chat
+launcher.addEventListener('touchstart', () => {
+  teaser.classList.add('show');
+  setTimeout(() => teaser.classList.remove('show'), 1200);
+}, { passive: true });
+
+launcher.addEventListener('click', () => {
+  teaser.classList.remove('show');
+  panel.classList.toggle('open');
+});
+closeBtn.addEventListener('click', () => panel.classList.remove('open'));
+
+// ---------- Validation ----------
+function validateForm() {
+  const name = document.getElementById('heena-name').value.trim();
+  const mobile = document.getElementById('heena-mobile').value.trim();
+  const email = document.getElementById('heena-email').value.trim();
+  let valid = true;
+
+  document.getElementById('err-name').style.display = name ? 'none' : 'block';
+  if (!name) valid = false;
+
+  const mobileOk = /^[6-9]\d{9}$/.test(mobile.replace(/\D/g, '').slice(-10));
+  document.getElementById('err-mobile').style.display = mobileOk ? 'none' : 'block';
+  if (!mobileOk) valid = false;
+
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  document.getElementById('err-email').style.display = emailOk ? 'none' : 'block';
+  if (!emailOk) valid = false;
+
+  return valid ? { name, mobile, email } : null;
+}
+
+startBtn.addEventListener('click', async () => {
+  const data = validateForm();
+  if (!data) return;
+
+  userInfo = data;
+  startBtn.disabled = true;
+  startBtn.textContent = "Starting...";
+
+  await sendToSheet({ action: "saveLead", ...userInfo, conversationSummary: "" });
+
+  formScreen.style.display = 'none';
+  chatScreen.style.display = 'flex';
+  panel.classList.remove('compact');
+  addMessage('bot', `Hello ??`);
+  conversationLog.push(`Heena: Hello ??`);
+
+  // Proactively guide the conversation with the first qualifying question
+  showTyping();
+  setTimeout(() => {
+    hideTyping();
+    addMessage('bot', FLOW_QUESTIONS.course);
+    conversationLog.push(`Heena: ${FLOW_QUESTIONS.course}`);
+  }, 1200);
+});
+
+// ---------- Chat logic ----------
+sendBtn.addEventListener('click', handleUserMessage);
+inputEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleUserMessage(); });
+
+function handleUserMessage() {
+  const text = inputEl.value.trim();
+  if (!text) return;
+  const userMsgEl = addMessage('user', text);
+  inputEl.value = '';
+  conversationLog.push(`User: ${text}`);
+
+  showTyping();
+
+  // WhatsApp-style: ticks turn blue the moment Heena starts "typing" a reply
+  const ticks = userMsgEl.querySelector('.ticks');
+  if (ticks) ticks.classList.add('read');
+
+  const delay = 1000 + Math.random() * 1000; // 1-2 sec realism delay
+  setTimeout(() => {
+    hideTyping();
+    const reply = flowDone ? getFAQAnswer(text) : processFlowAnswer(text);
+    addMessage('bot', reply);
+    conversationLog.push(`Heena: ${reply}`);
+    syncConversation();
+  }, delay);
+}
+
+function addMessage(sender, text) {
+  const div = document.createElement('div');
+  div.className = `heena-msg ${sender}`;
+
+  const textSpan = document.createElement('span');
+  textSpan.textContent = text;
+  div.appendChild(textSpan);
+
+  if (sender === 'user') {
+    const ticks = document.createElement('span');
+    ticks.className = 'ticks';
+    ticks.innerHTML = `<svg viewBox="0 0 20 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M1 6.5L4.5 10L11 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M6 6.5L9.5 10L16 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>`;
+    div.appendChild(ticks);
+  }
+
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return div;
+}
+
+function showTyping() {
+  const div = document.createElement('div');
+  div.className = 'heena-typing';
+  div.id = 'heena-typing-indicator';
+  div.innerHTML = 'Heena is typing <span class="heena-dots"><span></span><span></span><span></span></span>';
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+function hideTyping() {
+  const el = document.getElementById('heena-typing-indicator');
+  if (el) el.remove();
+}
+
+// ---------- FAQ Matching ----------
+function getFAQAnswer(userText) {
+  const text = userText.toLowerCase();
+  let bestScore = 0;
+  let bestAnswer = null;
+
+  FAQ_DATA.forEach(item => {
+    let matches = 0;
+    item.keywords.forEach(kw => {
+      if (text.includes(kw.toLowerCase())) matches++;
+    });
+    const score = matches / item.keywords.length;
+    if (score > bestScore) {
+      bestScore = score;
+      bestAnswer = item.answer;
+    }
+  });
+
+  if (bestAnswer && bestScore >= MATCH_THRESHOLD) {
+    return bestAnswer;
+  }
+  return FALLBACK_RESPONSE + " Meanwhile, our team will contact you shortly.";
+}
+
+// ---------- Google Sheet Sync ----------
+async function sendToSheet(payload) {
+  if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes('PASTE_YOUR')) {
+    console.warn('Heena chatbot: Apps Script URL not configured yet.');
+    return;
+  }
+  try {
+    await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      // text/plain avoids CORS preflight issues with Apps Script Web Apps
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    });
+  } catch (err) {
+    console.error('Heena chatbot: failed to sync with Google Sheet', err);
+  }
+}
+
+function syncConversation() {
+  sendToSheet({
+    action: 'updateConversation',
+    mobile: userInfo.mobile,
+    conversationSummary: conversationLog.join(' | ')
+  });
+}
+</script>
+</body>
+</html>
