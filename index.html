@@ -283,22 +283,36 @@ let conversationLog = [];
 // ---------- Guided Qualification Flow ----------
 // Step-by-step counsellor questions. Edit the text here to change wording.
 const FLOW_QUESTIONS = {
-  course: "Which course are you looking for?",
   country: "Which country are you looking for?",
-  timeline: "How soon are you planning to go abroad? (This year / next year / a specific intake?)",
-  education: "What is your last education qualification, and which stream did you take?",
-  percentage: "How much percentage (or CGPA) did you score in that?",
-  english: "Have you given any English language test (IELTS / TOEFL / PTE)? If yes, how much did you score?",
-  budget: "What is your approximate budget for overseas education?",
-  schedule: "When would be a convenient time for a quick call with our senior counsellor?"
+  course: "Which course are you looking for?",
+  timeline: "How soon are you planning to go abroad? (This year, next year, or a specific intake?)",
+  education: "What is your highest educational qualification, and which stream did you study?",
+  percentage: "What percentage or CGPA did you score in that?",
+  english: "Have you taken any English language proficiency test (IELTS, PTE, TOEFL, Duolingo, etc.)? If yes, what was your score?",
+  budget: "Could you share your approximate budget for overseas education?",
+  scheduleOffer: "Would you like to schedule a counselling call with one of our experts?",
+  scheduleTime: "Great! What would be a convenient date and time for the call?",
+  askName: "No problem, we can sort that out on a quick call. What's your name?",
+  askMobile: "Could you share your mobile number so our counsellor can reach you?",
+  clarifyTimeline: "No worries! Just to understand better - are you looking at this year, next year, or a specific intake (like Fall/Spring)?"
 };
 
-// Add more country/city names here as needed — used to detect if the user
-// already mentioned a destination so we don't ask the country question again.
+// Add more country/city names here as needed — used to recognise a destination
+// naturally from the user's own words instead of asking again.
 const KNOWN_LOCATIONS = [
-  "dubai","singapore","vancouver","montreal","toronto","california","usa","u.s.a","united states",
+  "dubai","uae","singapore","vancouver","montreal","toronto","california","usa","u.s.a","united states",
   "germany","canada","uk","united kingdom","australia","new zealand","ireland","france","italy",
   "spain","sydney","melbourne","london","berlin","dublin","auckland","poland","netherlands"
+];
+
+// Add more course names/keywords here as needed — used to recognise a course
+// naturally if the student mentions it in an earlier answer.
+const KNOWN_COURSES = [
+  "mba","bba","bca","b.tech","btech","m.tech","mtech","bsc","b.sc","msc","m.sc","engineering",
+  "computer science","data science","business analytics","artificial intelligence","cyber security",
+  "nursing","hospitality","hotel management","law","llb","medicine","mbbs","pharmacy","phd","diploma",
+  "masters","master's","bachelor","bachelors","undergraduate","postgraduate","finance","marketing",
+  "accounting","psychology","architecture","fintech","health science"
 ];
 
 // Words/phrases that indicate a clear, specific timeline answer.
@@ -307,79 +321,168 @@ const CLEAR_TIMELINE_HINTS = [
   "jul","aug","sep","oct","nov","dec","month","fall","spring","summer","winter"
 ];
 
-let flowStep = 0;       // which question we're currently expecting an answer for
-let flowDone = true;    // guided flow disabled per request — bot only replies reactively via FAQ matching.
-                        // Set this back to false if you want the step-by-step course/country/etc. flow to auto-run again.
-let leadAnswers = { course:"", country:"", timeline:"", education:"", percentage:"", englishTest:"", budget:"", callTime:"" };
+const POSITIVE_WORDS = ["yes","yeah","yep","yup","sure","ok","okay","definitely","please","haan","chalo","of course"];
+const NEGATIVE_WORDS = ["no","nah","not now","nahi","later","not interested","maybe later"];
+
+let flowStep = "COUNTRY"; // which question we're currently expecting an answer for
+let flowDone = false;     // once true, free-form FAQ/knowledge-base matching takes over
+let leadAnswers = {
+  country:"", course:"", timeline:"", education:"", percentage:"",
+  englishTest:"", budget:"", name:"", mobile:"", callTime:""
+};
+
+// Display-friendly names for locations that need special capitalization
+// (abbreviations stay uppercase, everything else gets Title Case).
+const LOCATION_DISPLAY_NAMES = {
+  "usa":"USA", "u.s.a":"USA", "united states":"United States", "uk":"UK",
+  "united kingdom":"United Kingdom", "uae":"UAE"
+};
+function formatLocation(loc) {
+  if (LOCATION_DISPLAY_NAMES[loc]) return LOCATION_DISPLAY_NAMES[loc];
+  return loc.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1));
+}
 
 function detectLocation(text) {
   const low = (text || "").toLowerCase();
   return KNOWN_LOCATIONS.find(loc => low.includes(loc)) || null;
 }
+function detectCourse(text) {
+  const low = (text || "").toLowerCase();
+  return KNOWN_COURSES.find(c => low.includes(c)) || null;
+}
 function isTimelineClear(text) {
   const low = (text || "").toLowerCase();
   return CLEAR_TIMELINE_HINTS.some(h => low.includes(h));
 }
+function isAffirmative(text) {
+  const low = (text || "").toLowerCase();
+  if (NEGATIVE_WORDS.some(w => low.includes(w))) return false;
+  if (POSITIVE_WORDS.some(w => low.includes(w))) return true;
+  return true; // default to "yes" so we don't lose an interested lead over ambiguous phrasing
+}
 
-// Decides whether to ask the country question or skip it (if already mentioned)
-function askCountryOrSkip() {
-  const loc = detectLocation(leadAnswers.course);
-  if (loc) {
-    leadAnswers.country = loc;
-    flowStep = 7; // fast-track: high-intent lead, go straight to call scheduling
-    return `Great, we can definitely help you with that destination! ${FLOW_QUESTIONS.schedule}`;
+// Maps the current flow step back to the question Heena is waiting on an answer
+// for — used to gently repeat the question after answering an off-topic query.
+function getCurrentQuestionText() {
+  switch (flowStep) {
+    case "COUNTRY": return FLOW_QUESTIONS.country;
+    case "COURSE": return FLOW_QUESTIONS.course;
+    case "TIMELINE": return FLOW_QUESTIONS.timeline;
+    case "CLARIFY_TIMELINE": return FLOW_QUESTIONS.clarifyTimeline;
+    case "COLLECT_NAME": return FLOW_QUESTIONS.askName;
+    case "COLLECT_MOBILE": return FLOW_QUESTIONS.askMobile;
+    case "EDUCATION": return FLOW_QUESTIONS.education;
+    case "PERCENTAGE": return FLOW_QUESTIONS.percentage;
+    case "ENGLISH": return FLOW_QUESTIONS.english;
+    case "BUDGET": return FLOW_QUESTIONS.budget;
+    case "SCHEDULE_OFFER": return FLOW_QUESTIONS.scheduleOffer;
+    case "SCHEDULE_TIME": return FLOW_QUESTIONS.scheduleTime;
+    case "SCHEDULE_MOBILE": return FLOW_QUESTIONS.askMobile;
+    default: return "";
   }
-  return FLOW_QUESTIONS.country;
 }
 
 // Processes the user's answer for whichever step we're currently on,
-// updates state, and returns Heena's next message.
+// updates state, and returns Heena's next message. Behaves like an experienced
+// counsellor: never re-asks something already known, and picks up extra
+// details (like a course mentioned inside the country answer) opportunistically.
 function processFlowAnswer(text) {
   switch (flowStep) {
-    case 0: // course
-      leadAnswers.course = text;
-      flowStep = 1;
-      return askCountryOrSkip();
 
-    case 1: // country (only reached if it wasn't already skipped)
-      leadAnswers.country = text;
-      flowStep = 2;
+    case "COUNTRY": {
+      const loc = formatLocation(detectLocation(text) || text);
+      leadAnswers.country = loc;
+      const courseFound = detectCourse(text);
+      if (courseFound) {
+        leadAnswers.course = courseFound;
+        flowStep = "TIMELINE";
+        return `Great! We'd be happy to help you with studying in ${loc}, and noted - ${courseFound} is a great choice! ${FLOW_QUESTIONS.timeline}`;
+      }
+      flowStep = "COURSE";
+      return `Great! We'd be happy to help you with studying in ${loc}. ${FLOW_QUESTIONS.course}`;
+    }
+
+    case "COURSE":
+      leadAnswers.course = text;
+      flowStep = "TIMELINE";
       return FLOW_QUESTIONS.timeline;
 
-    case 2: // timeline
+    case "TIMELINE":
       leadAnswers.timeline = text;
-      if (!isTimelineClear(text)) {
-        flowStep = 7;
-        return `No worries, that's completely fine! ${FLOW_QUESTIONS.schedule}`;
+      if (isTimelineClear(text)) {
+        flowStep = "EDUCATION";
+        return FLOW_QUESTIONS.education;
       }
-      flowStep = 3;
-      return FLOW_QUESTIONS.education;
+      flowStep = "CLARIFY_TIMELINE";
+      return FLOW_QUESTIONS.clarifyTimeline;
 
-    case 3: // education
+    case "CLARIFY_TIMELINE":
+      leadAnswers.timeline = text;
+      if (isTimelineClear(text)) {
+        flowStep = "EDUCATION";
+        return FLOW_QUESTIONS.education;
+      }
+      // Still unclear — collect name/mobile (only if missing) then move to scheduling a call
+      if (!leadAnswers.name) { flowStep = "COLLECT_NAME"; return FLOW_QUESTIONS.askName; }
+      if (!leadAnswers.mobile) { flowStep = "COLLECT_MOBILE"; return FLOW_QUESTIONS.askMobile; }
+      flowStep = "SCHEDULE_OFFER";
+      return FLOW_QUESTIONS.scheduleOffer;
+
+    case "COLLECT_NAME":
+      leadAnswers.name = text;
+      userInfo.name = text;
+      if (!leadAnswers.mobile) { flowStep = "COLLECT_MOBILE"; return `Thanks ${text}! ${FLOW_QUESTIONS.askMobile}`; }
+      flowStep = "SCHEDULE_OFFER";
+      return FLOW_QUESTIONS.scheduleOffer;
+
+    case "COLLECT_MOBILE":
+      leadAnswers.mobile = text;
+      userInfo.mobile = text;
+      flowStep = "SCHEDULE_OFFER";
+      return FLOW_QUESTIONS.scheduleOffer;
+
+    case "EDUCATION":
       leadAnswers.education = text;
-      flowStep = 4;
+      flowStep = "PERCENTAGE";
       return FLOW_QUESTIONS.percentage;
 
-    case 4: // percentage
+    case "PERCENTAGE":
       leadAnswers.percentage = text;
-      flowStep = 5;
+      flowStep = "ENGLISH";
       return FLOW_QUESTIONS.english;
 
-    case 5: // english test
+    case "ENGLISH":
       leadAnswers.englishTest = text;
-      flowStep = 6;
+      flowStep = "BUDGET";
       return FLOW_QUESTIONS.budget;
 
-    case 6: // budget
+    case "BUDGET":
       leadAnswers.budget = text;
-      flowStep = 7;
-      return FLOW_QUESTIONS.schedule;
+      flowStep = "SCHEDULE_OFFER";
+      return FLOW_QUESTIONS.scheduleOffer;
 
-    case 7: // call scheduling
+    case "SCHEDULE_OFFER":
+      if (isAffirmative(text)) {
+        flowStep = "SCHEDULE_TIME";
+        return FLOW_QUESTIONS.scheduleTime;
+      }
+      flowStep = "DONE";
+      flowDone = true;
+      return "No problem at all! Feel free to ask me anything else about studying abroad, or reach out whenever you're ready. \u{1F60A}";
+
+    case "SCHEDULE_TIME":
       leadAnswers.callTime = text;
-      flowStep = 8;
+      if (!leadAnswers.mobile) { flowStep = "SCHEDULE_MOBILE"; return `Perfect! ${FLOW_QUESTIONS.askMobile}`; }
+      flowStep = "DONE";
       flowDone = true;
       return `Perfect! I've noted everything down - our senior counsellor will call you around "${text}". Thanks for chatting with me today! \u{1F60A}`;
+
+    case "SCHEDULE_MOBILE":
+      leadAnswers.mobile = text;
+      userInfo.mobile = text;
+      flowStep = "DONE";
+      flowDone = true;
+      return `Perfect! I've noted everything down - our senior counsellor will call you around "${leadAnswers.callTime}". Thanks for chatting with me today! \u{1F60A}`;
 
     default:
       return getFAQAnswer(text);
@@ -401,6 +504,14 @@ function startChat() {
   chatStarted = true;
   addMessage('bot', `Hello \u{1F44B} How Can I Help You?`);
   conversationLog.push(`Heena: Hello \u{1F44B} How Can I Help You?`);
+
+  // Immediately begin the counselling question flow, one question at a time
+  showTyping();
+  setTimeout(() => {
+    hideTyping();
+    addMessage('bot', FLOW_QUESTIONS.country);
+    conversationLog.push(`Heena: ${FLOW_QUESTIONS.country}`);
+  }, 1200);
 }
 
 // ---------- Chat logic ----------
@@ -423,7 +534,25 @@ function handleUserMessage() {
   const delay = 1000 + Math.random() * 1000; // 1-2 sec realism delay
   setTimeout(() => {
     hideTyping();
-    const reply = flowDone ? getFAQAnswer(text) : processFlowAnswer(text);
+    let reply;
+
+    if (flowDone) {
+      reply = getFAQAnswer(text);
+    } else {
+      // Detect if this looks like a genuine question about our services rather
+      // than an answer to the pending counselling question — if so, answer it
+      // from the knowledge base first, then gently return to where we left off.
+      const faqMatch = matchFAQ(text);
+      const looksLikeQuestion = text.trim().endsWith('?');
+      if (looksLikeQuestion || faqMatch.score >= 0.34) {
+        const answer = faqMatch.answer && faqMatch.score >= MATCH_THRESHOLD ? faqMatch.answer : FALLBACK_RESPONSE;
+        const pendingQuestion = getCurrentQuestionText();
+        reply = pendingQuestion ? `${answer}\n\nAnyway, ${pendingQuestion}` : answer;
+      } else {
+        reply = processFlowAnswer(text);
+      }
+    }
+
     addMessage('bot', reply);
     conversationLog.push(`Heena: ${reply}`);
     syncConversation();
@@ -467,7 +596,7 @@ function hideTyping() {
 }
 
 // ---------- FAQ Matching ----------
-function getFAQAnswer(userText) {
+function matchFAQ(userText) {
   const text = userText.toLowerCase();
   let bestScore = 0;
   let bestAnswer = null;
@@ -484,8 +613,13 @@ function getFAQAnswer(userText) {
     }
   });
 
-  if (bestAnswer && bestScore >= MATCH_THRESHOLD) {
-    return bestAnswer;
+  return { score: bestScore, answer: bestAnswer };
+}
+
+function getFAQAnswer(userText) {
+  const match = matchFAQ(userText);
+  if (match.answer && match.score >= MATCH_THRESHOLD) {
+    return match.answer;
   }
   return FALLBACK_RESPONSE + " Meanwhile, our team will contact you shortly.";
 }
