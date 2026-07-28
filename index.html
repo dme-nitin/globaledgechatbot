@@ -83,7 +83,6 @@
     transform-origin:bottom right;
   }
   #heena-panel.open{ display:flex; animation:heena-rise .32s cubic-bezier(.2,.8,.3,1); }
-  #heena-panel.compact{ height:auto; max-height:480px; }
   @keyframes heena-rise{ from{opacity:0; transform:translateY(24px) scale(.96);} to{opacity:1; transform:translateY(0) scale(1);} }
 
   /* ---------- Header ---------- */
@@ -112,33 +111,8 @@
   .heena-close svg{ width:16px; height:16px; }
   .heena-close:hover{ opacity:1; }
 
-  /* ---------- Lead Form Screen ---------- */
-  #heena-form-screen{
-    flex:1; padding:18px 22px 20px; display:flex; flex-direction:column; overflow-y:auto; background:var(--cloud);
-  }
-  #heena-form-screen h2{
-    font-family:var(--font-display); font-size:19px; color:var(--ink); margin:0 0 6px;
-  }
-  #heena-form-screen p{ font-size:13px; color:var(--text-soft); margin:0 0 20px; line-height:1.5;}
-  .heena-field{ margin-bottom:14px; }
-  .heena-field label{ font-size:12px; font-weight:600; color:var(--ink); display:block; margin-bottom:6px; }
-  .heena-field input{
-    width:100%; padding:11px 13px; border-radius:11px; border:1.5px solid var(--line);
-    font-size:14px; font-family:var(--font-body); outline:none; transition:border .15s ease;
-    background:var(--white);
-  }
-  .heena-field input:focus{ border-color:var(--sky); }
-  .heena-field .err{ color:#dc2626; font-size:11px; margin-top:5px; display:none; }
-  #heena-start-btn{
-    margin-top:8px; background:linear-gradient(120deg, var(--sky-light), var(--sky-deep));
-    color:var(--white); border:none; padding:13px; border-radius:12px;
-    font-family:var(--font-display); font-weight:700; font-size:14px; cursor:pointer;
-    box-shadow:0 8px 20px rgba(2,132,199,0.32);
-  }
-  #heena-start-btn:disabled{ opacity:.6; cursor:not-allowed; }
-
   /* ---------- Chat Screen ---------- */
-  #heena-chat-screen{ flex:1; display:none; flex-direction:column; min-height:0; }
+  #heena-chat-screen{ flex:1; display:flex; flex-direction:column; min-height:0; }
   #heena-messages{
     flex:1; overflow-y:auto; padding:16px; background:var(--cloud);
     display:flex; flex-direction:column; gap:10px;
@@ -200,7 +174,7 @@
       <path d="M4 4h16v12H7l-3 3V4z" fill="white"/>
     </svg>
   </div>
-  <span>Chat with your AI Senior Counsellor</span>
+  <span>Chat with us</span>
 </div>
 
 <!-- Floating Launcher Button -->
@@ -212,11 +186,11 @@
 </button>
 
 <!-- Chat Panel -->
-<div id="heena-panel" class="compact">
+<div id="heena-panel">
   <div class="heena-header">
     <div class="heena-avatar">H</div>
     <div class="heena-header-text">
-      <div class="name"><span class="online-dot"></span>Heena is online</div>
+      <div class="name"><span class="online-dot"></span>Heena is Online</div>
     </div>
     <button class="heena-close" id="heena-close-btn" aria-label="Close chat">
       <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -225,31 +199,7 @@
     </button>
   </div>
 
-  <!-- Step 1: Lead Form -->
-  <div id="heena-form-screen">
-    <h2>Let's get started &#128075;</h2>
-    <p>Please share a few details so Heena can assist you better.</p>
-
-    <div class="heena-field">
-      <label for="heena-name">Name</label>
-      <input type="text" id="heena-name" placeholder="Your full name">
-      <div class="err" id="err-name">Please enter your name.</div>
-    </div>
-    <div class="heena-field">
-      <label for="heena-mobile">Mobile Number</label>
-      <input type="tel" id="heena-mobile" placeholder="10-digit mobile number">
-      <div class="err" id="err-mobile">Please enter a valid mobile number.</div>
-    </div>
-    <div class="heena-field">
-      <label for="heena-email">Email ID</label>
-      <input type="email" id="heena-email" placeholder="you@example.com">
-      <div class="err" id="err-email">Please enter a valid email.</div>
-    </div>
-
-    <button id="heena-start-btn">Start Chat</button>
-  </div>
-
-  <!-- Step 2: Chat Interface -->
+  <!-- Chat Interface (opens directly, no pre-chat form) -->
   <div id="heena-chat-screen">
     <div id="heena-messages"></div>
     <div id="heena-input-row">
@@ -280,14 +230,15 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz8aVAKKmYSYzhr
 const launcher = document.getElementById('heena-launcher');
 const panel = document.getElementById('heena-panel');
 const closeBtn = document.getElementById('heena-close-btn');
-const formScreen = document.getElementById('heena-form-screen');
 const chatScreen = document.getElementById('heena-chat-screen');
-const startBtn = document.getElementById('heena-start-btn');
 const messagesEl = document.getElementById('heena-messages');
 const inputEl = document.getElementById('heena-input');
 const sendBtn = document.getElementById('heena-send');
 const teaser = document.getElementById('heena-teaser');
 
+// No pre-chat form anymore, so there's no name/mobile/email to key Google Sheet rows by.
+// conversationLog is still tracked below; wire this up to however you capture contact
+// details now (e.g. a "leave your number" prompt) if you want chats saved to the Sheet again.
 let userInfo = { name: "", mobile: "", email: "" };
 let conversationLog = [];
 
@@ -319,7 +270,8 @@ const CLEAR_TIMELINE_HINTS = [
 ];
 
 let flowStep = 0;       // which question we're currently expecting an answer for
-let flowDone = false;   // once true, free-form FAQ matching takes over
+let flowDone = true;    // guided flow disabled per request — bot only replies reactively via FAQ matching.
+                        // Set this back to false if you want the step-by-step course/country/etc. flow to auto-run again.
 let leadAnswers = { course:"", country:"", timeline:"", education:"", percentage:"", englishTest:"", budget:"", callTime:"" };
 
 function detectLocation(text) {
@@ -405,57 +357,23 @@ launcher.addEventListener('touchstart', () => {
   setTimeout(() => teaser.classList.remove('show'), 1200);
 }, { passive: true });
 
+let chatStarted = false;
+
 launcher.addEventListener('click', () => {
   teaser.classList.remove('show');
   panel.classList.toggle('open');
+  if (panel.classList.contains('open') && !chatStarted) {
+    startChat();
+  }
 });
 closeBtn.addEventListener('click', () => panel.classList.remove('open'));
 
-// ---------- Validation ----------
-function validateForm() {
-  const name = document.getElementById('heena-name').value.trim();
-  const mobile = document.getElementById('heena-mobile').value.trim();
-  const email = document.getElementById('heena-email').value.trim();
-  let valid = true;
-
-  document.getElementById('err-name').style.display = name ? 'none' : 'block';
-  if (!name) valid = false;
-
-  const mobileOk = /^[6-9]\d{9}$/.test(mobile.replace(/\D/g, '').slice(-10));
-  document.getElementById('err-mobile').style.display = mobileOk ? 'none' : 'block';
-  if (!mobileOk) valid = false;
-
-  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  document.getElementById('err-email').style.display = emailOk ? 'none' : 'block';
-  if (!emailOk) valid = false;
-
-  return valid ? { name, mobile, email } : null;
+// Chat opens directly — no pre-chat form. Greeting is shown once, the first time the panel opens.
+function startChat() {
+  chatStarted = true;
+  addMessage('bot', `Hello \u{1F44B} How Can I Help You?`);
+  conversationLog.push(`Heena: Hello \u{1F44B} How Can I Help You?`);
 }
-
-startBtn.addEventListener('click', async () => {
-  const data = validateForm();
-  if (!data) return;
-
-  userInfo = data;
-  startBtn.disabled = true;
-  startBtn.textContent = "Starting...";
-
-  await sendToSheet({ action: "saveLead", ...userInfo, conversationSummary: "" });
-
-  formScreen.style.display = 'none';
-  chatScreen.style.display = 'flex';
-  panel.classList.remove('compact');
-  addMessage('bot', `Hello \u{1F44B}`);
-  conversationLog.push(`Heena: Hello \u{1F44B}`);
-
-  // Proactively guide the conversation with the first qualifying question
-  showTyping();
-  setTimeout(() => {
-    hideTyping();
-    addMessage('bot', FLOW_QUESTIONS.course);
-    conversationLog.push(`Heena: ${FLOW_QUESTIONS.course}`);
-  }, 1200);
-});
 
 // ---------- Chat logic ----------
 sendBtn.addEventListener('click', handleUserMessage);
@@ -563,6 +481,9 @@ async function sendToSheet(payload) {
 }
 
 function syncConversation() {
+  // Without the pre-chat form there's no mobile number to key this row by,
+  // so skip syncing until contact details are captured some other way.
+  if (!userInfo.mobile) return;
   sendToSheet({
     action: 'updateConversation',
     mobile: userInfo.mobile,
