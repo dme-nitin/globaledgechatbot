@@ -495,6 +495,8 @@ function getCurrentQuestionText() {
     case "SCHEDULE_OFFER": return FLOW_QUESTIONS.scheduleOffer;
     case "SCHEDULE_TIME": return FLOW_QUESTIONS.scheduleTime;
     case "SCHEDULE_MOBILE": return FLOW_QUESTIONS.askMobile;
+    case "MIDFLOW_NAME": return FLOW_QUESTIONS.name;
+    case "MIDFLOW_MOBILE": return FLOW_QUESTIONS.askMobile;
     default: return "";
   }
 }
@@ -505,8 +507,26 @@ function getCurrentQuestionText() {
 function nextStepAfterCountryAndCourse() {
   if (!leadAnswers.country) return "COUNTRY";
   if (!leadAnswers.course) return "COURSE";
-  return "NAME";
+  if (!leadAnswers.name) return "NAME";
+  return "TIMELINE";
 }
+
+// Detects if the student is expressing interest in a counselling call at any
+// point in the conversation (not just at the final Q9 offer) — e.g. "please
+// schedule a call", "can someone call me", "connect me to a counsellor".
+const SCHEDULE_REQUEST_PHRASES = [
+  "schedule a call", "schedule call", "book a call", "call me", "call back",
+  "callback", "talk to counsellor", "talk to a counsellor", "speak to counsellor",
+  "speak to a counsellor", "connect me", "talk to your team", "talk to someone",
+  "counselling call", "counseling call", "schedule counselling", "schedule counseling"
+];
+function isScheduleRequest(text) {
+  const low = (text || "").toLowerCase();
+  return SCHEDULE_REQUEST_PHRASES.some(p => low.includes(p));
+}
+// Steps where this reactive detection applies — the dedicated Q9 scheduling
+// steps already handle this directly, so they're excluded here.
+const REGULAR_PROFILE_STEPS = ["INITIAL","COUNTRY","COURSE","TIMELINE","CLARIFY_TIMELINE","EDUCATION","PERCENTAGE","ENGLISH","BUDGET"];
 
 // ---------- Answer Validation ----------
 // Checks whether a reply actually relates to the question currently being
@@ -666,6 +686,26 @@ function processFlowAnswer(text) {
       flowDone = true;
       return `Perfect! I've noted everything down - our senior counsellor will call you around "${leadAnswers.callTime}". Thanks for chatting with me today! \u{1F60A}`;
 
+    case "MIDFLOW_NAME": {
+      leadAnswers.name = text;
+      userInfo.name = text;
+      if (!leadAnswers.mobile) {
+        flowStep = "MIDFLOW_MOBILE";
+        return `Thank you, ${text}! ${FLOW_QUESTIONS.askMobile}`;
+      }
+      flowStep = pendingReturnStep || "COUNTRY";
+      pendingReturnStep = null;
+      return `Perfect, thank you! Our counsellor will call you shortly. Now, back to where we were - ${getCurrentQuestionText()}`;
+    }
+
+    case "MIDFLOW_MOBILE": {
+      leadAnswers.mobile = text;
+      userInfo.mobile = text;
+      flowStep = pendingReturnStep || "COUNTRY";
+      pendingReturnStep = null;
+      return `Perfect, thank you! Our counsellor will call you shortly. Now, back to where we were - ${getCurrentQuestionText()}`;
+    }
+
     default:
       return getFAQAnswer(text);
   }
@@ -673,6 +713,7 @@ function processFlowAnswer(text) {
 
 let chatStarted = false;
 let sheetRowCreated = false; // becomes true once we've created this visitor's row in the Sheet
+let pendingReturnStep = null; // remembers which question to resume if the student asks to schedule a call mid-flow
 
 launcher.addEventListener('click', () => {
   panel.classList.toggle('open');
@@ -728,7 +769,22 @@ function handleUserMessage() {
         // steps. An actual question (ending in "?") is still always caught.
         const isCountryOrCourseStep = (flowStep === "INITIAL" || flowStep === "COUNTRY" || flowStep === "COURSE");
         const isInterruption = looksLikeQuestion || (!isCountryOrCourseStep && faqMatch.score >= 0.34);
-        if (isInterruption) {
+
+        if (REGULAR_PROFILE_STEPS.includes(flowStep) && !looksLikeQuestion && isScheduleRequest(text)) {
+          // Student is asking for a call right now, mid-questionnaire — pause
+          // the flow, collect name/mobile (whichever is missing), then resume.
+          pendingReturnStep = flowStep;
+          if (!leadAnswers.name) {
+            flowStep = "MIDFLOW_NAME";
+            reply = `Sure, I'd be happy to set that up! \u{1F60A} ${FLOW_QUESTIONS.name}`;
+          } else if (!leadAnswers.mobile) {
+            flowStep = "MIDFLOW_MOBILE";
+            reply = `Sure, I'd be happy to set that up! ${FLOW_QUESTIONS.askMobile}`;
+          } else {
+            reply = `Great, I've noted that down - our counsellor will call you shortly! Now, back to where we were - ${getCurrentQuestionText()}`;
+            pendingReturnStep = null;
+          }
+        } else if (isInterruption) {
           const answer = faqMatch.answer && faqMatch.score >= safeMatchThreshold() ? faqMatch.answer : safeFallbackResponse();
           const pendingQuestion = getCurrentQuestionText();
           reply = pendingQuestion ? `${answer}\n\nAnyway, ${pendingQuestion}` : answer;
@@ -763,12 +819,39 @@ function handleUserMessage() {
         action: 'saveLead',
         name: leadAnswers.name,
         mobile: leadAnswers.mobile,
-        conversationSummary: conversationLog.join(' | ')
+        conversationSummary: buildSummary()
       });
     } else if (sheetRowCreated) {
       syncConversation();
     }
   }, delay);
+}
+
+// Builds a short, natural-language summary of the student's profile so far —
+// matches the style requested for the Google Sheet "Summary" column, e.g.
+// "Interested in MBA in Ireland. Planning for September 2027 intake.
+//  Bachelor's in Computer Science with 72%. IELTS 6.5. Budget Rs 20-25 Lakhs.
+//  Counselling call requested."
+function buildSummary() {
+  const parts = [];
+  if (leadAnswers.course || leadAnswers.country) {
+    const courseText = leadAnswers.course ? leadAnswers.course : "a course";
+    const countryText = leadAnswers.country ? ` in ${leadAnswers.country}` : "";
+    parts.push(`Interested in ${courseText}${countryText}.`);
+  }
+  if (leadAnswers.timeline) parts.push(`Planning for ${leadAnswers.timeline} intake.`);
+  if (leadAnswers.education) {
+    const pct = leadAnswers.percentage ? ` with ${leadAnswers.percentage}` : "";
+    parts.push(`${leadAnswers.education}${pct}.`);
+  }
+  if (leadAnswers.englishTest) parts.push(`English test: ${leadAnswers.englishTest}.`);
+  if (leadAnswers.budget) parts.push(`Budget ${leadAnswers.budget}.`);
+  if (leadAnswers.callTime) {
+    parts.push(`Counselling call requested for ${leadAnswers.callTime}.`);
+  } else if (flowStep && flowStep.indexOf("SCHEDULE") === 0) {
+    parts.push("Counselling call requested.");
+  }
+  return parts.length ? parts.join(' ') : "Conversation in progress.";
 }
 
 function addMessage(sender, text) {
@@ -820,7 +903,7 @@ function safeFaqData() {
 function safeFallbackResponse() {
   return (typeof FALLBACK_RESPONSE !== 'undefined' && FALLBACK_RESPONSE)
     ? FALLBACK_RESPONSE
-    : "That's a great question! Let me have one of our expert counsellors guide you on this.";
+    : "That's a great question. One of our expert counsellors can guide you better on this. Would you like me to schedule a counselling call for you?";
 }
 function safeMatchThreshold() {
   return (typeof MATCH_THRESHOLD !== 'undefined' && typeof MATCH_THRESHOLD === 'number') ? MATCH_THRESHOLD : 0.2;
@@ -859,7 +942,7 @@ function getFAQAnswer(userText) {
   if (match.answer && match.score >= safeMatchThreshold()) {
     return match.answer;
   }
-  return safeFallbackResponse() + " Would you like me to have them call you?";
+  return safeFallbackResponse();
 }
 
 // ---------- Google Sheet Sync ----------
@@ -885,7 +968,7 @@ function syncConversation() {
   sendToSheet({
     action: 'updateConversation',
     mobile: userInfo.mobile,
-    conversationSummary: conversationLog.join(' | ')
+    conversationSummary: buildSummary()
   });
 }
 </script>
