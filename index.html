@@ -415,7 +415,7 @@ function detectLocation(text) {
   const norm = normalizeText(text);
   if (!norm) return null;
 
-  // 1. Known city → country mapping (checked as whole-word matches)
+  // 1. Known city ? country mapping (checked as whole-word matches)
   for (const city in CITY_TO_COUNTRY) {
     if (new RegExp(`\\b${city}\\b`).test(norm)) return CITY_TO_COUNTRY[city];
   }
