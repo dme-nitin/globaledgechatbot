@@ -563,6 +563,18 @@ function randomRejectionPhrase() {
   return REJECTION_PHRASES[Math.floor(Math.random() * REJECTION_PHRASES.length)];
 }
 
+// A few friendly, varied ways to return to the pending counselling question
+// after answering an off-topic query — picked at random so it feels natural.
+const RETURN_PHRASES = [
+  "I hope that answers your question! \u{1F60A} Now, coming back to where we left off -",
+  "Coming back to my previous question \u{1F60A}",
+  "Now, back to where we were -",
+  "Hope that helps! Getting back to my earlier question -"
+];
+function randomReturnPhrase() {
+  return RETURN_PHRASES[Math.floor(Math.random() * RETURN_PHRASES.length)];
+}
+
 // Processes the user's answer for whichever step we're currently on,
 // updates state, and returns Heena's next message. Behaves like an experienced
 // counsellor: never re-asks something already known, and picks up extra
@@ -768,7 +780,11 @@ function handleUserMessage() {
         // treat a strong FAQ-score match as an interruption outside those two
         // steps. An actual question (ending in "?") is still always caught.
         const isCountryOrCourseStep = (flowStep === "INITIAL" || flowStep === "COUNTRY" || flowStep === "COURSE");
-        const isInterruption = looksLikeQuestion || (!isCountryOrCourseStep && faqMatch.score >= 0.34);
+        // Uses the same 0.2 threshold as the off-topic answer validators below —
+        // otherwise a message could score too low to trigger an interruption
+        // but still high enough to fail validation, getting silently rejected
+        // instead of answered. Keeping both thresholds identical closes that gap.
+        const isInterruption = looksLikeQuestion || (!isCountryOrCourseStep && faqMatch.score >= 0.2);
 
         if (REGULAR_PROFILE_STEPS.includes(flowStep) && !looksLikeQuestion && isScheduleRequest(text)) {
           // Student is asking for a call right now, mid-questionnaire — pause
@@ -787,7 +803,7 @@ function handleUserMessage() {
         } else if (isInterruption) {
           const answer = faqMatch.answer && faqMatch.score >= safeMatchThreshold() ? faqMatch.answer : safeFallbackResponse();
           const pendingQuestion = getCurrentQuestionText();
-          reply = pendingQuestion ? `${answer}\n\nAnyway, ${pendingQuestion}` : answer;
+          reply = pendingQuestion ? `${answer}\n\n${randomReturnPhrase()} ${pendingQuestion}` : answer;
         } else if (!isCurrentAnswerValid(text)) {
           // Reply doesn't look like it actually answers the pending question
           // (e.g. "accommodation assistance" while waiting for a qualification).
@@ -916,25 +932,25 @@ function escapeRegExp(str) {
 
 function matchFAQ(userText) {
   const text = (userText || "").toLowerCase();
-  let bestScore = 0;
-  let bestAnswer = null;
+  const data = safeFaqData();
 
-  safeFaqData().forEach(item => {
-    let matches = 0;
-    (item.keywords || []).forEach(kw => {
-      // Word-boundary match instead of plain substring — otherwise a short
-      // keyword like "pr" would false-match inside an unrelated word like "Priya".
-      const pattern = new RegExp('\\b' + escapeRegExp(kw.toLowerCase()) + '\\b');
-      if (pattern.test(text)) matches++;
+  // Checks each FAQ entry in order (specific per-country entries are listed
+  // before the generic ones in faq-data.js) and returns the FIRST one where
+  // at least one of its keyword phrases fully matches. Using "any keyword
+  // matched" instead of "fraction of keywords matched" means an entry with
+  // many alternate phrasings isn't penalized just for having more variants.
+  for (let i = 0; i < data.length; i++) {
+    const item = data[i];
+    const matched = (item.keywords || []).some(kw => {
+      const words = kw.toLowerCase().split(/\s+/);
+      return words.every(w => new RegExp('\\b' + escapeRegExp(w) + '\\b').test(text));
     });
-    const score = item.keywords && item.keywords.length ? matches / item.keywords.length : 0;
-    if (score > bestScore) {
-      bestScore = score;
-      bestAnswer = item.answer;
+    if (matched) {
+      return { score: 1, answer: item.answer };
     }
-  });
+  }
 
-  return { score: bestScore, answer: bestAnswer };
+  return { score: 0, answer: null };
 }
 
 function getFAQAnswer(userText) {
