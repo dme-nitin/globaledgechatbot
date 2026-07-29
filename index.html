@@ -298,6 +298,7 @@ let conversationLog = [];
 const FLOW_QUESTIONS = {
   country: "Which country are you looking for?",
   course: "Which course are you looking for?",
+  name: "By the way, may I know your name? \u{1F60A}",
   timeline: "How soon are you planning to go abroad? (This year, next year, or a specific intake?)",
   education: "What is your highest educational qualification, and which stream did you study?",
   percentage: "What percentage or CGPA did you score in that?",
@@ -305,8 +306,7 @@ const FLOW_QUESTIONS = {
   budget: "Could you share your approximate budget for overseas education?",
   scheduleOffer: "Would you like to schedule a counselling call with one of our experts?",
   scheduleTime: "Great! What would be a convenient date and time for the call?",
-  askName: "No problem, we can sort that out on a quick call. What's your name?",
-  askMobile: "Could you share your mobile number so our counsellor can reach you?",
+  askMobile: "Could you please share your mobile number so our counsellor can assist you better if required?",
   clarifyTimeline: "No worries! Just to understand better - are you looking at this year, next year, or a specific intake (like Fall/Spring)?"
 };
 
@@ -415,7 +415,7 @@ function detectLocation(text) {
   const norm = normalizeText(text);
   if (!norm) return null;
 
-  // 1. Known city ? country mapping (checked as whole-word matches)
+  // 1. Known city → country mapping (checked as whole-word matches)
   for (const city in CITY_TO_COUNTRY) {
     if (new RegExp(`\\b${city}\\b`).test(norm)) return CITY_TO_COUNTRY[city];
   }
@@ -470,9 +470,9 @@ function getCurrentQuestionText() {
   switch (flowStep) {
     case "COUNTRY": return FLOW_QUESTIONS.country;
     case "COURSE": return FLOW_QUESTIONS.course;
+    case "NAME": return FLOW_QUESTIONS.name;
     case "TIMELINE": return FLOW_QUESTIONS.timeline;
     case "CLARIFY_TIMELINE": return FLOW_QUESTIONS.clarifyTimeline;
-    case "COLLECT_NAME": return FLOW_QUESTIONS.askName;
     case "COLLECT_MOBILE": return FLOW_QUESTIONS.askMobile;
     case "EDUCATION": return FLOW_QUESTIONS.education;
     case "PERCENTAGE": return FLOW_QUESTIONS.percentage;
@@ -493,6 +493,7 @@ function getCurrentQuestionText() {
 // COUNTRY/COURSE, which already accept free-form answers) are always valid —
 // only questions with a genuinely recognisable expected pattern are checked.
 const STEP_VALIDATORS = {
+  NAME: (text) => matchFAQ(text).score < 0.2,
   TIMELINE: (text) => matchFAQ(text).score < 0.2,
   CLARIFY_TIMELINE: (text) => matchFAQ(text).score < 0.2,
   EDUCATION: (text) => /\b(10th|12th|ssc|hsc|matric|diploma|bachelor|bachelors|graduate|undergraduate|postgraduate|b\.?a\.?|b\.?sc\.?|b\.?com\.?|b\.?tech|b\.?e\.?|m\.?a\.?|m\.?sc\.?|m\.?com\.?|m\.?tech|mba|mbbs|phd|intermediate|puc|degree|schooling)\b/i.test(text),
@@ -506,10 +507,10 @@ const STEP_VALIDATORS = {
 // A few friendly, varied ways to say "that didn't answer my question" —
 // picked at random so it doesn't feel robotic if it happens more than once.
 const REJECTION_PHRASES = [
-  "Sorry, I couldn't relate your reply to my previous question. \u{1F60A}",
-  "Thanks for your message! To help you better, I still need the answer to my previous question.",
-  "I just need this bit of information before we move ahead. \u{1F60A}",
-  "Sorry, that doesn't seem to answer my previous question. \u{1F60A}"
+  "Sorry, I couldn't relate your reply to my previous question. \u{1F60A} Could you please answer that first so I can guide you accurately?",
+  "Thanks for sharing that! To guide you accurately, I still need an answer to my previous question first.",
+  "No worries, I just need this bit of information before we move ahead. \u{1F60A}",
+  "Sorry, that doesn't seem to answer my previous question. Could you help me out with that first?"
 ];
 function isCurrentAnswerValid(text) {
   const validator = STEP_VALIDATORS[flowStep];
@@ -532,8 +533,8 @@ function processFlowAnswer(text) {
       const courseFound = detectCourse(text);
       if (courseFound) {
         leadAnswers.course = courseFound;
-        flowStep = "TIMELINE";
-        return `Great! ${loc} is an excellent study destination. We'd be happy to help you with studying there, and noted - ${courseFound} is a great choice! ${FLOW_QUESTIONS.timeline}`;
+        flowStep = "NAME";
+        return `Great! ${loc} is an excellent study destination. We'd be happy to help you with studying there, and noted - ${courseFound} is a great choice! ${FLOW_QUESTIONS.name}`;
       }
       flowStep = "COURSE";
       return `Great! ${loc} is an excellent study destination. We'd be happy to help you with studying in ${loc}. ${FLOW_QUESTIONS.course}`;
@@ -541,8 +542,14 @@ function processFlowAnswer(text) {
 
     case "COURSE":
       leadAnswers.course = text;
+      flowStep = "NAME";
+      return `Great choice! \u{1F393} ${FLOW_QUESTIONS.name}`;
+
+    case "NAME":
+      leadAnswers.name = text;
+      userInfo.name = text;
       flowStep = "TIMELINE";
-      return FLOW_QUESTIONS.timeline;
+      return `Thank you, ${text}! ${FLOW_QUESTIONS.timeline}`;
 
     case "TIMELINE":
       leadAnswers.timeline = text;
@@ -559,16 +566,9 @@ function processFlowAnswer(text) {
         flowStep = "EDUCATION";
         return FLOW_QUESTIONS.education;
       }
-      // Still unclear — collect name/mobile (only if missing) then move to scheduling a call
-      if (!leadAnswers.name) { flowStep = "COLLECT_NAME"; return FLOW_QUESTIONS.askName; }
+      // Still unclear — name is already known by this point, so just get the
+      // mobile number (if missing) then move to scheduling a call
       if (!leadAnswers.mobile) { flowStep = "COLLECT_MOBILE"; return FLOW_QUESTIONS.askMobile; }
-      flowStep = "SCHEDULE_OFFER";
-      return FLOW_QUESTIONS.scheduleOffer;
-
-    case "COLLECT_NAME":
-      leadAnswers.name = text;
-      userInfo.name = text;
-      if (!leadAnswers.mobile) { flowStep = "COLLECT_MOBILE"; return `Thanks ${text}! ${FLOW_QUESTIONS.askMobile}`; }
       flowStep = "SCHEDULE_OFFER";
       return FLOW_QUESTIONS.scheduleOffer;
 
@@ -581,22 +581,22 @@ function processFlowAnswer(text) {
     case "EDUCATION":
       leadAnswers.education = text;
       flowStep = "PERCENTAGE";
-      return FLOW_QUESTIONS.percentage;
+      return `Thank you for sharing that. ${FLOW_QUESTIONS.percentage}`;
 
     case "PERCENTAGE":
       leadAnswers.percentage = text;
       flowStep = "ENGLISH";
-      return FLOW_QUESTIONS.english;
+      return `Got it! ${FLOW_QUESTIONS.english}`;
 
     case "ENGLISH":
       leadAnswers.englishTest = text;
       flowStep = "BUDGET";
-      return FLOW_QUESTIONS.budget;
+      return `Thanks for letting me know. ${FLOW_QUESTIONS.budget}`;
 
     case "BUDGET":
       leadAnswers.budget = text;
       flowStep = "SCHEDULE_OFFER";
-      return FLOW_QUESTIONS.scheduleOffer;
+      return `Thank you for sharing that! ${FLOW_QUESTIONS.scheduleOffer}`;
 
     case "SCHEDULE_OFFER":
       if (isAffirmative(text)) {
@@ -627,6 +627,7 @@ function processFlowAnswer(text) {
 }
 
 let chatStarted = false;
+let sheetRowCreated = false; // becomes true once we've created this visitor's row in the Sheet
 
 launcher.addEventListener('click', () => {
   panel.classList.toggle('open');
@@ -714,7 +715,20 @@ function handleUserMessage() {
 
     addMessage('bot', reply);
     conversationLog.push(`Heena: ${reply}`);
-    syncConversation();
+
+    // Once we have a mobile number, create the Sheet row (once) and keep
+    // updating its conversation summary on every turn after that.
+    if (leadAnswers.mobile && !sheetRowCreated) {
+      sheetRowCreated = true;
+      sendToSheet({
+        action: 'saveLead',
+        name: leadAnswers.name,
+        mobile: leadAnswers.mobile,
+        conversationSummary: conversationLog.join(' | ')
+      });
+    } else if (sheetRowCreated) {
+      syncConversation();
+    }
   }, delay);
 }
 
@@ -767,10 +781,15 @@ function safeFaqData() {
 function safeFallbackResponse() {
   return (typeof FALLBACK_RESPONSE !== 'undefined' && FALLBACK_RESPONSE)
     ? FALLBACK_RESPONSE
-    : "Thanks for sharing that - our team will get back to you shortly.";
+    : "That's a great question! Let me have one of our expert counsellors guide you on this.";
 }
 function safeMatchThreshold() {
   return (typeof MATCH_THRESHOLD !== 'undefined' && typeof MATCH_THRESHOLD === 'number') ? MATCH_THRESHOLD : 0.2;
+}
+
+// Escapes regex special characters in a keyword before building a boundary pattern.
+function escapeRegExp(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function matchFAQ(userText) {
@@ -781,7 +800,10 @@ function matchFAQ(userText) {
   safeFaqData().forEach(item => {
     let matches = 0;
     (item.keywords || []).forEach(kw => {
-      if (text.includes(kw.toLowerCase())) matches++;
+      // Word-boundary match instead of plain substring — otherwise a short
+      // keyword like "pr" would false-match inside an unrelated word like "Priya".
+      const pattern = new RegExp('\\b' + escapeRegExp(kw.toLowerCase()) + '\\b');
+      if (pattern.test(text)) matches++;
     });
     const score = item.keywords && item.keywords.length ? matches / item.keywords.length : 0;
     if (score > bestScore) {
@@ -798,7 +820,7 @@ function getFAQAnswer(userText) {
   if (match.answer && match.score >= safeMatchThreshold()) {
     return match.answer;
   }
-  return safeFallbackResponse() + " Meanwhile, our team will contact you shortly.";
+  return safeFallbackResponse() + " Would you like me to have them call you?";
 }
 
 // ---------- Google Sheet Sync ----------
@@ -820,9 +842,7 @@ async function sendToSheet(payload) {
 }
 
 function syncConversation() {
-  // Without the pre-chat form there's no mobile number to key this row by,
-  // so skip syncing until contact details are captured some other way.
-  if (!userInfo.mobile) return;
+  if (!userInfo.mobile) return; // safety guard; sheetRowCreated already ensures this is set
   sendToSheet({
     action: 'updateConversation',
     mobile: userInfo.mobile,
