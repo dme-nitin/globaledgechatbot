@@ -536,21 +536,32 @@ function handleUserMessage() {
     hideTyping();
     let reply;
 
-    if (flowDone) {
-      reply = getFAQAnswer(text);
-    } else {
-      // Detect if this looks like a genuine question about our services rather
-      // than an answer to the pending counselling question — if so, answer it
-      // from the knowledge base first, then gently return to where we left off.
-      const faqMatch = matchFAQ(text);
-      const looksLikeQuestion = text.trim().endsWith('?');
-      if (looksLikeQuestion || faqMatch.score >= 0.34) {
-        const answer = faqMatch.answer && faqMatch.score >= MATCH_THRESHOLD ? faqMatch.answer : FALLBACK_RESPONSE;
-        const pendingQuestion = getCurrentQuestionText();
-        reply = pendingQuestion ? `${answer}\n\nAnyway, ${pendingQuestion}` : answer;
+    try {
+      if (flowDone) {
+        reply = getFAQAnswer(text);
       } else {
-        reply = processFlowAnswer(text);
+        // Detect if this looks like a genuine question about our services rather
+        // than an answer to the pending counselling question — if so, answer it
+        // from the knowledge base first, then gently return to where we left off.
+        const faqMatch = matchFAQ(text);
+        const looksLikeQuestion = text.trim().endsWith('?');
+        if (looksLikeQuestion || faqMatch.score >= 0.34) {
+          const answer = faqMatch.answer && faqMatch.score >= MATCH_THRESHOLD ? faqMatch.answer : FALLBACK_RESPONSE;
+          const pendingQuestion = getCurrentQuestionText();
+          reply = pendingQuestion ? `${answer}\n\nAnyway, ${pendingQuestion}` : answer;
+        } else {
+          reply = processFlowAnswer(text);
+        }
       }
+    } catch (err) {
+      // Safety net: never leave the user with a blank/stuck chat. If anything
+      // unexpected throws, log it for debugging and recover gracefully instead
+      // of going silent, then re-ask whatever question was pending.
+      console.error('Heena chatbot: error generating reply', err);
+      const pendingQuestion = getCurrentQuestionText();
+      reply = pendingQuestion
+        ? `Sorry, I missed that - could you say that again? ${pendingQuestion}`
+        : "Sorry, I missed that - could you say that again?";
     }
 
     addMessage('bot', reply);
