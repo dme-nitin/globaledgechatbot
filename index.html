@@ -371,7 +371,7 @@ const CLEAR_TIMELINE_HINTS = [
 const POSITIVE_WORDS = ["yes","yeah","yep","yup","sure","ok","okay","definitely","please","haan","chalo","of course"];
 const NEGATIVE_WORDS = ["no","nah","not now","nahi","later","not interested","maybe later"];
 
-let flowStep = "COUNTRY"; // which question we're currently expecting an answer for
+let flowStep = "INITIAL"; // waits for the student's first message before asking anything
 let flowDone = false;     // once true, free-form FAQ/knowledge-base matching takes over
 let leadAnswers = {
   country:"", course:"", timeline:"", education:"", percentage:"",
@@ -453,6 +453,19 @@ function detectCourse(text) {
   const low = (text || "").toLowerCase();
   return KNOWN_COURSES.find(c => low.includes(c)) || null;
 }
+
+// Display-friendly names for course abbreviations (kept uppercase); everything
+// else falls back to Title Case.
+const COURSE_DISPLAY_NAMES = {
+  "mba":"MBA", "bba":"BBA", "bca":"BCA", "b.tech":"B.Tech", "btech":"B.Tech",
+  "m.tech":"M.Tech", "mtech":"M.Tech", "bsc":"BSc", "b.sc":"B.Sc", "msc":"MSc",
+  "m.sc":"M.Sc", "mbbs":"MBBS", "llb":"LLB", "phd":"PhD"
+};
+function formatCourse(course) {
+  if (COURSE_DISPLAY_NAMES[course]) return COURSE_DISPLAY_NAMES[course];
+  return course.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1));
+}
+
 function isTimelineClear(text) {
   const low = (text || "").toLowerCase();
   return CLEAR_TIMELINE_HINTS.some(h => low.includes(h));
@@ -468,6 +481,7 @@ function isAffirmative(text) {
 // for — used to gently repeat the question after answering an off-topic query.
 function getCurrentQuestionText() {
   switch (flowStep) {
+    case "INITIAL": return FLOW_QUESTIONS.country;
     case "COUNTRY": return FLOW_QUESTIONS.country;
     case "COURSE": return FLOW_QUESTIONS.course;
     case "NAME": return FLOW_QUESTIONS.name;
@@ -483,6 +497,15 @@ function getCurrentQuestionText() {
     case "SCHEDULE_MOBILE": return FLOW_QUESTIONS.askMobile;
     default: return "";
   }
+}
+
+// Decides which question comes next based on what we already know —
+// used so country/course are never asked twice regardless of how they
+// were learned (proactively asked, or picked up from the student's own words).
+function nextStepAfterCountryAndCourse() {
+  if (!leadAnswers.country) return "COUNTRY";
+  if (!leadAnswers.course) return "COURSE";
+  return "NAME";
 }
 
 // ---------- Answer Validation ----------
@@ -527,23 +550,45 @@ function randomRejectionPhrase() {
 function processFlowAnswer(text) {
   switch (flowStep) {
 
+    case "INITIAL": {
+      // First message from the student — analyze it for country/course before
+      // asking anything, so we never ask something they've already told us.
+      const loc = detectLocation(text);
+      const course = detectCourse(text);
+      let ack;
+      if (loc && course) {
+        leadAnswers.country = formatLocation(loc);
+        leadAnswers.course = formatCourse(course);
+        ack = `Great choice! ${leadAnswers.country} is an excellent destination for ${leadAnswers.course} studies. \u{1F60A}`;
+      } else if (loc) {
+        leadAnswers.country = formatLocation(loc);
+        ack = `Great! ${leadAnswers.country} is an excellent study destination. \u{1F60A}`;
+      } else if (course) {
+        leadAnswers.course = formatCourse(course);
+        ack = `That's a great choice! \u{1F60A}`;
+      } else {
+        ack = `Hello! \u{1F60A} Nice to meet you.`;
+      }
+      flowStep = nextStepAfterCountryAndCourse();
+      return `${ack} ${getCurrentQuestionText()}`;
+    }
+
     case "COUNTRY": {
       const loc = detectLocation(text) || formatLocation(text.trim());
       leadAnswers.country = loc;
-      const courseFound = detectCourse(text);
-      if (courseFound) {
-        leadAnswers.course = courseFound;
-        flowStep = "NAME";
-        return `Great! ${loc} is an excellent study destination. We'd be happy to help you with studying there, and noted - ${courseFound} is a great choice! ${FLOW_QUESTIONS.name}`;
-      }
-      flowStep = "COURSE";
-      return `Great! ${loc} is an excellent study destination. We'd be happy to help you with studying in ${loc}. ${FLOW_QUESTIONS.course}`;
+      const courseFound = !leadAnswers.course ? detectCourse(text) : null;
+      if (courseFound) leadAnswers.course = formatCourse(courseFound);
+      flowStep = nextStepAfterCountryAndCourse();
+      const ack = courseFound
+        ? `Great! ${loc} is an excellent study destination. We'd be happy to help you with studying there, and noted - ${leadAnswers.course} is a great choice! \u{1F60A}`
+        : `Great! ${loc} is an excellent study destination. We'd be happy to help you with studying in ${loc}.`;
+      return `${ack} ${getCurrentQuestionText()}`;
     }
 
     case "COURSE":
       leadAnswers.course = text;
-      flowStep = "NAME";
-      return `Great choice! \u{1F393} ${FLOW_QUESTIONS.name}`;
+      flowStep = nextStepAfterCountryAndCourse();
+      return `Great choice! \u{1F393} ${getCurrentQuestionText()}`;
 
     case "NAME":
       leadAnswers.name = text;
@@ -642,14 +687,8 @@ function startChat() {
   chatStarted = true;
   addMessage('bot', `Hello \u{1F44B} How Can I Help You?`);
   conversationLog.push(`Heena: Hello \u{1F44B} How Can I Help You?`);
-
-  // Immediately begin the counselling question flow, one question at a time
-  showTyping();
-  setTimeout(() => {
-    hideTyping();
-    addMessage('bot', FLOW_QUESTIONS.country);
-    conversationLog.push(`Heena: ${FLOW_QUESTIONS.country}`);
-  }, 1200);
+  // Bot now waits silently for the student's first message — see the
+  // "INITIAL" case in processFlowAnswer() for how that first message is analyzed.
 }
 
 // ---------- Chat logic ----------
@@ -687,7 +726,7 @@ function handleUserMessage() {
         // (e.g. "MBA" is both a valid course answer AND an FAQ topic), so only
         // treat a strong FAQ-score match as an interruption outside those two
         // steps. An actual question (ending in "?") is still always caught.
-        const isCountryOrCourseStep = (flowStep === "COUNTRY" || flowStep === "COURSE");
+        const isCountryOrCourseStep = (flowStep === "INITIAL" || flowStep === "COUNTRY" || flowStep === "COURSE");
         const isInterruption = looksLikeQuestion || (!isCountryOrCourseStep && faqMatch.score >= 0.34);
         if (isInterruption) {
           const answer = faqMatch.answer && faqMatch.score >= safeMatchThreshold() ? faqMatch.answer : safeFallbackResponse();
