@@ -265,6 +265,19 @@
  */
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz8aVAKKmYSYzhrPnAIXMxfJ68oOAecCN-2uhwE7zhR3irvQsNPdrexcy7stenKbshYlg/exec";
 
+// Diagnostic check: if faq-data.js failed to load (wrong path, 404, blocked
+// script, hosting misconfiguration), FAQ_DATA won't exist. The guided
+// question flow still works fine without it (see safeFaqData() below), but
+// warn loudly in the console so this is easy to spot and fix during setup.
+if (typeof FAQ_DATA === 'undefined') {
+  console.warn(
+    'Heena chatbot: faq-data.js did not load (FAQ_DATA is undefined). ' +
+    'Make sure faq-data.js is uploaded in the SAME folder as chatbot-widget.html ' +
+    'and is reachable at the exact same path. The guided question flow will still ' +
+    'work, but knowledge-base answers will use a generic fallback until this is fixed.'
+  );
+}
+
 const launcher = document.getElementById('heena-launcher');
 const panel = document.getElementById('heena-panel');
 const closeBtn = document.getElementById('heena-close-btn');
@@ -297,13 +310,47 @@ const FLOW_QUESTIONS = {
   clarifyTimeline: "No worries! Just to understand better - are you looking at this year, next year, or a specific intake (like Fall/Spring)?"
 };
 
-// Add more country/city names here as needed — used to recognise a destination
-// naturally from the user's own words instead of asking again.
-const KNOWN_LOCATIONS = [
-  "dubai","uae","singapore","vancouver","montreal","toronto","california","usa","u.s.a","united states",
-  "germany","canada","uk","united kingdom","australia","new zealand","ireland","france","italy",
-  "spain","sydney","melbourne","london","berlin","dublin","auckland","poland","netherlands"
+// ---------- Destination Recognition ----------
+// Comprehensive country list — used to recognise a destination naturally from
+// the user's own words. This list is intentionally broad, but note it can
+// NEVER be fully exhaustive of "every place on Earth" — see detectLocation()
+// below, which always falls back to accepting whatever the student typed
+// (title-cased) even if it isn't in this list, so a valid destination is
+// never rejected just because it's missing here.
+const COUNTRY_LIST = [
+  "ireland","canada","united kingdom","germany","dubai","australia",
+  "united states","france","italy","spain","poland","netherlands","new zealand",
+  "sweden","norway","finland","denmark","switzerland","austria","belgium","portugal",
+  "malta","cyprus","czech republic","hungary","lithuania","latvia","estonia","romania",
+  "croatia","slovenia","slovakia","greece","united arab emirates","qatar","oman",
+  "bahrain","kuwait","saudi arabia","singapore","malaysia","japan","south korea",
+  "china","hong kong","england","scotland","wales","northern ireland","russia",
+  "turkey","israel","south africa","brazil","mexico","argentina","thailand","vietnam",
+  "indonesia","philippines","egypt","nigeria","kenya"
 ];
+
+// Common abbreviations / short forms mapped to their full country name.
+const COUNTRY_ABBREVIATIONS = {
+  "usa":"United States", "u.s.a":"United States", "us":"United States", "america":"United States",
+  "uk":"United Kingdom", "u.k":"United Kingdom", "gb":"United Kingdom", "britain":"United Kingdom",
+  "uae":"United Arab Emirates", "u.a.e":"United Arab Emirates", "nz":"New Zealand"
+};
+
+// Well-known cities mapped to their country — so "Dublin" is understood as Ireland, etc.
+// Add more cities here anytime; no need to touch any other logic.
+const CITY_TO_COUNTRY = {
+  "dublin":"Ireland", "cork":"Ireland", "galway":"Ireland",
+  "vancouver":"Canada", "toronto":"Canada", "montreal":"Canada", "calgary":"Canada", "ottawa":"Canada",
+  "london":"United Kingdom", "manchester":"United Kingdom", "birmingham":"United Kingdom",
+  "glasgow":"United Kingdom", "edinburgh":"United Kingdom", "liverpool":"United Kingdom",
+  "sydney":"Australia", "melbourne":"Australia", "brisbane":"Australia", "perth":"Australia", "adelaide":"Australia",
+  "auckland":"New Zealand", "wellington":"New Zealand", "christchurch":"New Zealand",
+  "dubai":"United Arab Emirates", "abu dhabi":"United Arab Emirates", "sharjah":"United Arab Emirates",
+  "berlin":"Germany", "munich":"Germany", "frankfurt":"Germany", "hamburg":"Germany",
+  "california":"United States", "new york":"United States", "boston":"United States", "chicago":"United States",
+  "paris":"France", "milan":"Italy", "rome":"Italy", "madrid":"Spain", "barcelona":"Spain",
+  "amsterdam":"Netherlands", "warsaw":"Poland", "singapore city":"Singapore"
+};
 
 // Add more course names/keywords here as needed — used to recognise a course
 // naturally if the student mentions it in an earlier answer.
@@ -331,21 +378,77 @@ let leadAnswers = {
   englishTest:"", budget:"", name:"", mobile:"", callTime:""
 };
 
-// Display-friendly names for locations that need special capitalization
-// (abbreviations stay uppercase, everything else gets Title Case).
-const LOCATION_DISPLAY_NAMES = {
-  "usa":"USA", "u.s.a":"USA", "united states":"United States", "uk":"UK",
-  "united kingdom":"United Kingdom", "uae":"UAE"
-};
+// Strips punctuation and collapses extra whitespace so "  Ireland!!" or
+// "ireland." both normalize to "ireland" before we try to match anything.
+function normalizeText(text) {
+  return (text || "")
+    .toLowerCase()
+    .replace(/[.,!?;:'"()]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function formatLocation(loc) {
-  if (LOCATION_DISPLAY_NAMES[loc]) return LOCATION_DISPLAY_NAMES[loc];
   return loc.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1));
 }
 
-function detectLocation(text) {
-  const low = (text || "").toLowerCase();
-  return KNOWN_LOCATIONS.find(loc => low.includes(loc)) || null;
+// Tiny Levenshtein (edit-distance) implementation — used to tolerate small
+// spelling mistakes (e.g. "Irelnad", "Austrailia") when matching country names.
+function editDistance(a, b) {
+  const dp = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[a.length][b.length];
 }
+
+// Flexible destination recognition: tries city mapping, abbreviations, exact
+// country match, then a fuzzy (typo-tolerant) match — in that order. Returns
+// a properly-formatted country/city name, or null if nothing matched (the
+// caller then just accepts the student's own wording rather than rejecting it).
+function detectLocation(text) {
+  const norm = normalizeText(text);
+  if (!norm) return null;
+
+  // 1. Known city ? country mapping (checked as whole-word matches)
+  for (const city in CITY_TO_COUNTRY) {
+    if (new RegExp(`\\b${city}\\b`).test(norm)) return CITY_TO_COUNTRY[city];
+  }
+
+  // 2. Common abbreviations (whole-word match, so "us" doesn't match inside "australia")
+  for (const abbr in COUNTRY_ABBREVIATIONS) {
+    if (new RegExp(`\\b${abbr}\\b`).test(norm)) return COUNTRY_ABBREVIATIONS[abbr];
+  }
+
+  // 3. Exact substring match against the full country list (longest name first,
+  //    so "Northern Ireland" is matched in full instead of just "Ireland")
+  const sortedByLength = [...COUNTRY_LIST].sort((a, b) => b.length - a.length);
+  const exact = sortedByLength.find(c => norm.includes(c));
+  if (exact) return formatLocation(exact);
+
+  // 4. Fuzzy match to tolerate minor typos (only for single/double-word answers,
+  //    so we don't accidentally fuzzy-match a whole sentence)
+  const words = norm.split(" ");
+  if (words.length <= 3) {
+    let bestMatch = null, bestDistance = Infinity;
+    COUNTRY_LIST.forEach(country => {
+      const dist = editDistance(norm, country);
+      const threshold = country.length <= 6 ? 1 : 2;
+      if (dist <= threshold && dist < bestDistance) { bestDistance = dist; bestMatch = country; }
+    });
+    if (bestMatch) return formatLocation(bestMatch);
+  }
+
+  // 5. No match found in our lists — don't reject it, just accept the
+  //    student's own wording as the destination (nicely capitalized).
+  return null;
+}
+
 function detectCourse(text) {
   const low = (text || "").toLowerCase();
   return KNOWN_COURSES.find(c => low.includes(c)) || null;
@@ -382,6 +485,40 @@ function getCurrentQuestionText() {
   }
 }
 
+// ---------- Answer Validation ----------
+// Checks whether a reply actually relates to the question currently being
+// asked, so an unrelated message (e.g. asking about accommodation while
+// Heena is waiting for an education qualification) doesn't get mistaken for
+// a real answer and silently skip the question. Steps not listed here (like
+// COUNTRY/COURSE, which already accept free-form answers) are always valid —
+// only questions with a genuinely recognisable expected pattern are checked.
+const STEP_VALIDATORS = {
+  TIMELINE: (text) => matchFAQ(text).score < 0.2,
+  CLARIFY_TIMELINE: (text) => matchFAQ(text).score < 0.2,
+  EDUCATION: (text) => /\b(10th|12th|ssc|hsc|matric|diploma|bachelor|bachelors|graduate|undergraduate|postgraduate|b\.?a\.?|b\.?sc\.?|b\.?com\.?|b\.?tech|b\.?e\.?|m\.?a\.?|m\.?sc\.?|m\.?com\.?|m\.?tech|mba|mbbs|phd|intermediate|puc|degree|schooling)\b/i.test(text),
+  PERCENTAGE: (text) => /\d/.test(text),
+  ENGLISH: (text) => matchFAQ(text).score < 0.2,
+  BUDGET: (text) => /\d|lakh|lac|crore|rs\.?|inr|\$|usd|budget/i.test(text),
+  COLLECT_MOBILE: (text) => /\d{7,}/.test(text.replace(/\D/g, "")),
+  SCHEDULE_MOBILE: (text) => /\d{7,}/.test(text.replace(/\D/g, ""))
+};
+
+// A few friendly, varied ways to say "that didn't answer my question" —
+// picked at random so it doesn't feel robotic if it happens more than once.
+const REJECTION_PHRASES = [
+  "Sorry, I couldn't relate your reply to my previous question. \u{1F60A}",
+  "Thanks for your message! To help you better, I still need the answer to my previous question.",
+  "I just need this bit of information before we move ahead. \u{1F60A}",
+  "Sorry, that doesn't seem to answer my previous question. \u{1F60A}"
+];
+function isCurrentAnswerValid(text) {
+  const validator = STEP_VALIDATORS[flowStep];
+  return validator ? validator(text) : true;
+}
+function randomRejectionPhrase() {
+  return REJECTION_PHRASES[Math.floor(Math.random() * REJECTION_PHRASES.length)];
+}
+
 // Processes the user's answer for whichever step we're currently on,
 // updates state, and returns Heena's next message. Behaves like an experienced
 // counsellor: never re-asks something already known, and picks up extra
@@ -390,16 +527,16 @@ function processFlowAnswer(text) {
   switch (flowStep) {
 
     case "COUNTRY": {
-      const loc = formatLocation(detectLocation(text) || text);
+      const loc = detectLocation(text) || formatLocation(text.trim());
       leadAnswers.country = loc;
       const courseFound = detectCourse(text);
       if (courseFound) {
         leadAnswers.course = courseFound;
         flowStep = "TIMELINE";
-        return `Great! We'd be happy to help you with studying in ${loc}, and noted - ${courseFound} is a great choice! ${FLOW_QUESTIONS.timeline}`;
+        return `Great! ${loc} is an excellent study destination. We'd be happy to help you with studying there, and noted - ${courseFound} is a great choice! ${FLOW_QUESTIONS.timeline}`;
       }
       flowStep = "COURSE";
-      return `Great! We'd be happy to help you with studying in ${loc}. ${FLOW_QUESTIONS.course}`;
+      return `Great! ${loc} is an excellent study destination. We'd be happy to help you with studying in ${loc}. ${FLOW_QUESTIONS.course}`;
     }
 
     case "COURSE":
@@ -545,10 +682,21 @@ function handleUserMessage() {
         // from the knowledge base first, then gently return to where we left off.
         const faqMatch = matchFAQ(text);
         const looksLikeQuestion = text.trim().endsWith('?');
-        if (looksLikeQuestion || faqMatch.score >= 0.34) {
-          const answer = faqMatch.answer && faqMatch.score >= MATCH_THRESHOLD ? faqMatch.answer : FALLBACK_RESPONSE;
+        // Country/Course answers legitimately overlap with FAQ topic keywords
+        // (e.g. "MBA" is both a valid course answer AND an FAQ topic), so only
+        // treat a strong FAQ-score match as an interruption outside those two
+        // steps. An actual question (ending in "?") is still always caught.
+        const isCountryOrCourseStep = (flowStep === "COUNTRY" || flowStep === "COURSE");
+        const isInterruption = looksLikeQuestion || (!isCountryOrCourseStep && faqMatch.score >= 0.34);
+        if (isInterruption) {
+          const answer = faqMatch.answer && faqMatch.score >= safeMatchThreshold() ? faqMatch.answer : safeFallbackResponse();
           const pendingQuestion = getCurrentQuestionText();
           reply = pendingQuestion ? `${answer}\n\nAnyway, ${pendingQuestion}` : answer;
+        } else if (!isCurrentAnswerValid(text)) {
+          // Reply doesn't look like it actually answers the pending question
+          // (e.g. "accommodation assistance" while waiting for a qualification).
+          // Don't advance the flow — politely ask again instead.
+          reply = `${randomRejectionPhrase()} ${getCurrentQuestionText()}`;
         } else {
           reply = processFlowAnswer(text);
         }
@@ -607,17 +755,35 @@ function hideTyping() {
 }
 
 // ---------- FAQ Matching ----------
+// Defensive fallbacks: if faq-data.js fails to load for any reason (wrong
+// path, 404, blocked script, hosting misconfiguration), these prevent the
+// ENTIRE chat from crashing on every single message. The guided question
+// flow does not actually depend on faq-data.js at all — only the optional
+// "answer knowledge-base questions" feature does, and that now degrades
+// gracefully instead of taking the whole conversation down with it.
+function safeFaqData() {
+  return (typeof FAQ_DATA !== 'undefined' && Array.isArray(FAQ_DATA)) ? FAQ_DATA : [];
+}
+function safeFallbackResponse() {
+  return (typeof FALLBACK_RESPONSE !== 'undefined' && FALLBACK_RESPONSE)
+    ? FALLBACK_RESPONSE
+    : "Thanks for sharing that - our team will get back to you shortly.";
+}
+function safeMatchThreshold() {
+  return (typeof MATCH_THRESHOLD !== 'undefined' && typeof MATCH_THRESHOLD === 'number') ? MATCH_THRESHOLD : 0.2;
+}
+
 function matchFAQ(userText) {
-  const text = userText.toLowerCase();
+  const text = (userText || "").toLowerCase();
   let bestScore = 0;
   let bestAnswer = null;
 
-  FAQ_DATA.forEach(item => {
+  safeFaqData().forEach(item => {
     let matches = 0;
-    item.keywords.forEach(kw => {
+    (item.keywords || []).forEach(kw => {
       if (text.includes(kw.toLowerCase())) matches++;
     });
-    const score = matches / item.keywords.length;
+    const score = item.keywords && item.keywords.length ? matches / item.keywords.length : 0;
     if (score > bestScore) {
       bestScore = score;
       bestAnswer = item.answer;
@@ -629,10 +795,10 @@ function matchFAQ(userText) {
 
 function getFAQAnswer(userText) {
   const match = matchFAQ(userText);
-  if (match.answer && match.score >= MATCH_THRESHOLD) {
+  if (match.answer && match.score >= safeMatchThreshold()) {
     return match.answer;
   }
-  return FALLBACK_RESPONSE + " Meanwhile, our team will contact you shortly.";
+  return safeFallbackResponse() + " Meanwhile, our team will contact you shortly.";
 }
 
 // ---------- Google Sheet Sync ----------
