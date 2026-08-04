@@ -37,7 +37,7 @@
   /* ---------- Floating Launcher (3D sky-blue) ---------- */
   #heena-launcher{
     position:relative; flex-shrink:0;
-    width:4rem; height:4rem; border-radius:50%;
+    width:40px; height:40px; border-radius:50%;
     background:linear-gradient(150deg, var(--sky-light) 0%, var(--sky) 55%, var(--sky-deep) 100%);
     box-shadow:
       0 0.875rem 1.875rem rgba(2,132,199,0.42),
@@ -49,7 +49,7 @@
     animation:heena-glow 2.6s ease-in-out infinite;
   }
   #heena-launcher:hover{ transform:scale(1.08) translateY(-0.125rem); }
-  #heena-launcher svg{ width:1.7rem; height:1.7rem; }
+  #heena-launcher svg{ width:17px; height:17px; }
   #heena-launcher .dot{
     position:absolute; top:0.0625rem; right:0.0625rem; width:0.8125rem;height:0.8125rem;
     background:#22c55e; border:0.15625rem solid var(--white); border-radius:50%;
@@ -63,16 +63,10 @@
   /* ---------- Permanent "Chat with us" label (no hover behaviour) ---------- */
   #heena-teaser{
     background:var(--white); color:var(--ink); font-family:var(--font-display);
-    font-weight:600; font-size:0.85rem; padding:0.8rem 1rem; border-radius:0.875rem;
+    font-weight:600; font-size:15px; padding:0.5rem 0.75rem; border-radius:0.875rem;
     box-shadow:0 0.625rem 1.625rem rgba(15,36,54,0.16); display:flex; align-items:center; gap:0.625rem;
     width:max-content; max-width:min(14rem, 45vw); flex-shrink:1;
   }
-  #heena-teaser .teaser-icon{
-    width:1.625rem;height:1.625rem;border-radius:50%;flex-shrink:0;
-    background:linear-gradient(150deg, var(--sky-light), var(--sky-deep));
-    display:flex;align-items:center;justify-content:center;
-  }
-  #heena-teaser .teaser-icon svg{ width:0.875rem;height:0.875rem; }
   #heena-teaser span{
     flex:1; min-width:0; white-space:normal; word-break:normal; overflow-wrap:normal;
     line-height:1.4;
@@ -187,9 +181,9 @@
       height:min(38rem, calc(100vh - 6rem));
       height:min(38rem, calc(100dvh - 6rem));
     }
-    #heena-teaser{ max-width:40vw; padding:0.7rem 0.875rem; font-size:0.8rem; }
-    #heena-launcher{ width:3.5rem; height:3.5rem; }
-    #heena-launcher svg{ width:1.5rem; height:1.5rem; }
+    #heena-teaser{ max-width:40vw; padding:0.5rem 0.75rem; font-size:15px; }
+    #heena-launcher{ width:40px; height:40px; }
+    #heena-launcher svg{ width:17px; height:17px; }
   }
   /* Very small phones (older iPhones / narrow Android) */
   @media (max-width:340px){
@@ -207,11 +201,6 @@
 <!-- Launcher + permanent "Chat with us" label -->
 <div id="heena-launcher-wrap">
   <div id="heena-teaser">
-    <div class="teaser-icon">
-      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M4 4h16v12H7l-3 3V4z" fill="white"/>
-      </svg>
-    </div>
     <span>Chat with us</span>
   </div>
 
@@ -415,7 +404,7 @@ function detectLocation(text) {
   const norm = normalizeText(text);
   if (!norm) return null;
 
-  // 1. Known city ? country mapping (checked as whole-word matches)
+  // 1. Known city → country mapping (checked as whole-word matches)
   for (const city in CITY_TO_COUNTRY) {
     if (new RegExp(`\\b${city}\\b`).test(norm)) return CITY_TO_COUNTRY[city];
   }
